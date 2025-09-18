@@ -1,190 +1,180 @@
-"use client";
-
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ActivityIndicator,
-  Animated,
+  ScrollView,
+  RefreshControl,
 } from "react-native";
-import { useRouter } from "expo-router";
 import { getDashboardData } from "@/lib/api";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
+import { useToast } from "@/components/ui/use-toast";
+import { Coins, Users, Trophy, Gift } from "lucide-react-native";
 
-export default function OverviewTab() {
-  const [data, setData] = useState<any>(null);
+interface UserData {
+  id: string;
+  name: string;
+  email: string;
+  referralCode: string;
+  coins: number;
+  referralCount: number;
+  referralHistory: Array<{
+    referredUser: string;
+    referredUserName: string;
+    referredUserEmail: string;
+    coinsEarned: number;
+    referredAt: string;
+  }>;
+}
+
+export default function OverviewScreen() {
+  const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const { toast } = useToast();
+  const [refreshing, setRefreshing] = useState(false);
   const { colors } = useTheme();
+  const { toast } = useToast();
 
-  // Animation values
-  const headerAnim = useRef(new Animated.Value(0)).current;
-  const cardAnim1 = useRef(new Animated.Value(0)).current;
-  const cardAnim2 = useRef(new Animated.Value(0)).current;
-  const cardAnim3 = useRef(new Animated.Value(0)).current;
+  const fetchDashboardData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const result = await getDashboardData();
-        if (result.message) {
-          setData(result);
-        } else {
-          toast({
-            title: "Authentication Required",
-            description:
-              result.message || "Please log in to view the dashboard.",
-            variant: "destructive",
-          });
-          router.replace("/login");
-        }
-      } catch (error: any) {
+    try {
+      const result = await getDashboardData();
+      if (result.user) {
+        setUserData(result.user);
+      } else {
         toast({
           title: "Error",
-          description:
-            error.message ||
-            "Failed to fetch dashboard data. Please log in again.",
+          description: result.message || "Failed to load dashboard data",
           variant: "destructive",
         });
-        router.replace("/login");
-      } finally {
-        setLoading(false);
-        // Start animations after data loads
-        Animated.stagger(100, [
-          Animated.timing(headerAnim, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(cardAnim1, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(cardAnim2, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(cardAnim3, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]).start();
       }
-    };
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load dashboard data",
+        variant: "destructive",
+      });
+    } finally {
+      if (isRefresh) setRefreshing(false);
+      else setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchDashboardData();
-  }, [router, toast, headerAnim, cardAnim1, cardAnim2, cardAnim3]);
+  }, []);
+
+  const onRefresh = () => {
+    fetchDashboardData(true);
+  };
 
   const themedStyles = getThemedStyles(colors);
 
-  if (loading) {
+  if (loading && !userData) {
     return (
       <View style={themedStyles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={themedStyles.loadingText}>Loading dashboard...</Text>
+        <Text style={themedStyles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
-  const headerAnimatedStyle = {
-    opacity: headerAnim,
-    transform: [
-      {
-        translateY: headerAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [-20, 0],
-        }),
-      },
-    ],
-  };
-
-  const cardAnimatedStyle = (animValue: Animated.Value) => ({
-    opacity: animValue,
-    transform: [
-      {
-        translateY: animValue.interpolate({
-          inputRange: [0, 1],
-          outputRange: [50, 0],
-        }),
-      },
-    ],
-  });
-
   return (
-    <SafeAreaView style={themedStyles.safeArea}>
-      <Animated.View style={[themedStyles.header, headerAnimatedStyle]}>
-        <Text style={themedStyles.headerTitle}>AdsMoney Dashboard</Text>
-      </Animated.View>
-      <View style={themedStyles.contentContainer}>
-        <Animated.View
-          style={[
-            themedStyles.card,
-            themedStyles.welcomeCard,
-            cardAnimatedStyle(cardAnim1),
-          ]}
-        >
-          <CardHeader>
-            <CardTitle>Welcome, {data?.user?.name || "User"}!</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Text style={themedStyles.cardContentText}>
-              Your journey to maximizing ad revenue starts here.
-            </Text>
-            <Text style={themedStyles.cardDescriptionText}>
-              Explore your performance metrics and manage your campaigns.
-            </Text>
-          </CardContent>
-        </Animated.View>
-
-        <Animated.View
-          style={[themedStyles.metricCard, cardAnimatedStyle(cardAnim2)]}
-        >
-          <CardHeader>
-            <CardTitle style={themedStyles.metricTitle}>
-              Total Earnings
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Text style={themedStyles.metricValue}>$1,234.56</Text>
-            <Text style={themedStyles.metricDescription}>Last 30 days</Text>
-          </CardContent>
-        </Animated.View>
-
-        <Animated.View
-          style={[themedStyles.metricCard, cardAnimatedStyle(cardAnim3)]}
-        >
-          <CardHeader>
-            <CardTitle style={themedStyles.metricTitle}>
-              Active Campaigns
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Text style={themedStyles.metricValue}>12</Text>
-            <Text style={themedStyles.metricDescription}>
-              Currently running
-            </Text>
-          </CardContent>
-        </Animated.View>
+    <ScrollView
+      style={themedStyles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      <View style={themedStyles.header}>
+        <Text style={themedStyles.welcomeText}>Welcome back,</Text>
+        <Text style={themedStyles.nameText}>{userData?.name}!</Text>
       </View>
-    </SafeAreaView>
+
+      <View style={themedStyles.statsGrid}>
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <Coins color={colors.primary} size={24} />
+            </View>
+            <Text style={themedStyles.statValue}>{userData?.coins || 0}</Text>
+            <Text style={themedStyles.statLabel}>Total Coins</Text>
+          </CardContent>
+        </Card>
+
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <Users color={colors.primary} size={24} />
+            </View>
+            <Text style={themedStyles.statValue}>
+              {userData?.referralCount || 0}
+            </Text>
+            <Text style={themedStyles.statLabel}>Referrals</Text>
+          </CardContent>
+        </Card>
+      </View>
+
+      <Card style={themedStyles.card}>
+        <CardHeader>
+          <CardTitle style={themedStyles.cardTitle}>
+            <Gift color={colors.primary} size={20} />
+            Your Referral Code
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <View style={themedStyles.referralCodeContainer}>
+            <Text style={themedStyles.referralCode}>
+              {userData?.referralCode}
+            </Text>
+            <Text style={themedStyles.referralCodeDesc}>
+              Share this code with friends to earn 10 coins for each successful
+              referral!
+            </Text>
+          </View>
+        </CardContent>
+      </Card>
+
+      {userData?.referralHistory && userData.referralHistory.length > 0 && (
+        <Card style={themedStyles.card}>
+          <CardHeader>
+            <CardTitle style={themedStyles.cardTitle}>
+              Recent Referrals
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {userData.referralHistory.slice(0, 3).map((referral, index) => (
+              <View key={index} style={themedStyles.referralItem}>
+                <View style={themedStyles.referralInfo}>
+                  <Text style={themedStyles.referralName}>
+                    {referral.referredUserName}
+                  </Text>
+                  <Text style={themedStyles.referralDate}>
+                    {new Date(referral.referredAt).toLocaleDateString()}
+                  </Text>
+                </View>
+                <View style={themedStyles.referralReward}>
+                  <Text style={themedStyles.rewardText}>
+                    +{referral.coinsEarned}
+                  </Text>
+                  <Coins color={colors.primary} size={16} />
+                </View>
+              </View>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </ScrollView>
   );
 }
 
 const getThemedStyles = (colors: ThemeContextType["colors"]) =>
   StyleSheet.create({
-    safeArea: {
+    container: {
       flex: 1,
       backgroundColor: colors.background,
-      paddingTop: 16,
     },
     loadingContainer: {
       flex: 1,
@@ -193,67 +183,104 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       backgroundColor: colors.background,
     },
     loadingText: {
-      marginTop: 10,
-      fontSize: 16,
       color: colors.textSecondary,
+      fontSize: 16,
     },
     header: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      backgroundColor: colors.cardBackground,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.headerBorder,
-      marginBottom: 16,
+      padding: 20,
+      paddingBottom: 0,
     },
-    headerTitle: {
-      fontSize: 24,
-      fontWeight: "bold",
-      color: colors.textPrimary,
-    },
-    contentContainer: {
-      flex: 1,
-      paddingHorizontal: 16,
-      gap: 16,
-    },
-    card: {
-      width: "100%",
-    },
-    welcomeCard: {
-      marginBottom: 8,
-    },
-    cardContentText: {
+    welcomeText: {
       fontSize: 16,
-      color: colors.textPrimary,
-      marginBottom: 8,
-    },
-    cardDescriptionText: {
-      fontSize: 14,
       color: colors.textSecondary,
     },
-    metricCard: {
-      width: "100%",
-      paddingVertical: 16,
-      paddingHorizontal: 20,
+    nameText: {
+      fontSize: 24,
+      fontWeight: "bold",
+      color: colors.textSecondary,
+      marginTop: 4,
+    },
+    statsGrid: {
       flexDirection: "row",
-      justifyContent: "space-between",
+      paddingHorizontal: 20,
+      gap: 12,
+      marginTop: 20,
+    },
+    statCard: {
+      flex: 1,
+    },
+    statContent: {
       alignItems: "center",
+      paddingVertical: 16,
     },
-    metricTitle: {
-      fontSize: 18,
-      fontWeight: "600",
-      color: colors.textPrimary,
+    statIcon: {
+      marginBottom: 8,
     },
-    metricValue: {
+    statValue: {
+      fontSize: 24,
+      fontWeight: "bold",
+      color: colors.textSecondary,
+    },
+    statLabel: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginTop: 4,
+    },
+    card: {
+      margin: 20,
+      marginTop: 12,
+    },
+    cardTitle: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    referralCodeContainer: {
+      alignItems: "center",
+      paddingVertical: 16,
+    },
+    referralCode: {
       fontSize: 28,
       fontWeight: "bold",
       color: colors.primary,
+      letterSpacing: 2,
+      marginBottom: 8,
     },
-    metricDescription: {
-      fontSize: 12,
+    referralCodeDesc: {
+      fontSize: 14,
       color: colors.textSecondary,
-      marginTop: 4,
+      textAlign: "center",
+      lineHeight: 20,
+    },
+    referralItem: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    referralInfo: {
+      flex: 1,
+    },
+    referralName: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.textSecondary,
+    },
+    referralDate: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    referralReward: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
+    rewardText: {
+      fontSize: 16,
+      fontWeight: "bold",
+      color: colors.primary,
     },
   });

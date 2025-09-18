@@ -1,62 +1,143 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { View, Text, StyleSheet } from "react-native"
-import { Link, useRouter } from "expo-router"
-import { registerUser } from "@/lib/api"
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { useToast } from "@/components/ui/use-toast"
-import { useTheme } from "@/components/theme-context" // Import useTheme
-import type { ThemeContextType } from "@/components/theme-context" // Declare ThemeContextType
+// import { useState } from "react"
+import { useState, useEffect } from "react";
+import { View, Text, StyleSheet } from "react-native";
+// import { Link, useRouter } from "expo-router"
+// import { registerUser } from "@/lib/api"
+import { Link, useRouter, useLocalSearchParams } from "expo-router";
+import { registerUser, verifyReferralCode } from "@/lib/api";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
+import { useTheme } from "@/components/theme-context"; // Import useTheme
+import type { ThemeContextType } from "@/components/theme-context"; // Declare ThemeContextType
+import { Gift, CheckCircle, XCircle } from "lucide-react-native";
 
 export default function RegisterPage() {
-  const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [loading, setLoading] = useState(false)
-  const router = useRouter()
-  const { toast } = useToast()
-  const { colors } = useTheme() // Get theme colors
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [referralStatus, setReferralStatus] = useState<{
+    valid: boolean | null;
+    message: string;
+    referrerName?: string;
+  }>({ valid: null, message: "" });
+  const [checkingReferral, setCheckingReferral] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const { ref } = useLocalSearchParams<{ ref?: string }>();
+  const { toast } = useToast();
+  const { colors } = useTheme(); // Get theme colors
+  useEffect(() => {
+    if (ref) {
+      setReferralCode(ref);
+      checkReferralCode(ref);
+    }
+  }, [ref]);
+
+  const checkReferralCode = async (code: string) => {
+    if (!code.trim()) {
+      setReferralStatus({ valid: null, message: "" });
+      return;
+    }
+    setCheckingReferral(true);
+    try {
+      const result = await verifyReferralCode(code.trim().toUpperCase());
+      setReferralStatus({
+        valid: result.valid,
+        message: result.message,
+        referrerName: result.referrer?.name,
+      });
+    } catch (error) {
+      setReferralStatus({
+        valid: false,
+        message: "Error verifying referral code",
+      });
+    } finally {
+      setCheckingReferral(false);
+    }
+  };
+
+  const handleReferralCodeChange = (code: string) => {
+    setReferralCode(code);
+    if (code.length >= 3) {
+      checkReferralCode(code);
+    } else {
+      setReferralStatus({ valid: null, message: "" });
+    }
+  };
 
   const handleSubmit = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const result = await registerUser({ name, email, password })
-      if (result.message) {
+      const result = await registerUser({ name, email, password });
+      const registrationData = {
+        name,
+        email,
+        password,
+        ...(referralCode.trim() &&
+          referralStatus.valid && {
+            referralCode: referralCode.trim().toUpperCase(),
+          }),
+      };
+
+      const result1 = await registerUser(registrationData);
+      if (result1.message) {
+        let successMessage = result.message;
+        if (result1.referredBy) {
+          successMessage += ` You were referred by ${result.referredBy}!`;
+          console.log("Registration data being sent:", registrationData);
+        }
+
+        console.log("Registration response:", result1);
+
         toast({
           title: "Registration Successful",
-          description: result.message,
+          //  description: result.message,
+          description: successMessage,
           variant: "success",
-        })
-        router.push(`/verify-otp?email=${email}`)
+        });
+        router.push(`/verify-otp?email=${email}`);
       } else {
         toast({
           title: "Registration Failed",
           description: result.message || "An unknown error occurred.",
           variant: "destructive",
-        })
+        });
       }
     } catch (error: any) {
       toast({
         title: "Error",
         description: error.message || "Failed to register. Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const themedStyles = getThemedStyles(colors)
+  const themedStyles = getThemedStyles(colors);
 
   return (
     <View style={themedStyles.container}>
       <Card style={themedStyles.card}>
         <CardHeader style={themedStyles.cardHeader}>
-          <CardTitle style={themedStyles.title}>Register for AdsMoney</CardTitle>
-          <CardDescription style={themedStyles.description}>Enter your details to create an account</CardDescription>
+          <CardTitle style={themedStyles.title}>
+            Register for AdsMoney
+          </CardTitle>
+          <CardDescription style={themedStyles.description}>
+            Enter your details to create an account
+          </CardDescription>
         </CardHeader>
         <CardContent style={themedStyles.form}>
           <Input
@@ -87,7 +168,55 @@ export default function RegisterPage() {
             editable={!loading}
           />
 
-          <Button onPress={handleSubmit} loading={loading} style={themedStyles.button}>
+          <View style={themedStyles.referralSection}>
+            {checkingReferral ? (
+              <View style={themedStyles.loadingIcon} />
+            ) : referralStatus.valid === true ? (
+              <CheckCircle color={colors.primary} size={20} />
+            ) : referralStatus.valid === false ? (
+              <XCircle color={colors.red} size={20} />
+            ) : referralCode.length > 0 ? (
+              <Gift color={colors.textSecondary} size={20} />
+            ) : null}
+            <Input
+              label="Referral Code (Optional)"
+              placeholder="Enter referral code"
+              autoCapitalize="characters"
+              value={referralCode}
+              onChangeText={handleReferralCodeChange}
+              editable={!loading}
+            />
+            {referralStatus.message && (
+              <View style={themedStyles.referralMessage}>
+                <Text
+                  style={[
+                    themedStyles.referralMessageText,
+                    {
+                      color: referralStatus.valid ? colors.primary : colors.red,
+                    },
+                  ]}
+                >
+                  {referralStatus.valid && referralStatus.referrerName
+                    ? `Valid! Referred by ${referralStatus.referrerName}`
+                    : referralStatus.message}
+                </Text>
+              </View>
+            )}
+            {referralStatus.valid && (
+              <View style={themedStyles.referralBonus}>
+                <Gift color={colors.primary} size={16} />
+                <Text style={themedStyles.referralBonusText}>
+                  Your referrer will earn 10 coins when you verify your account!
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <Button
+            onPress={handleSubmit}
+            loading={loading}
+            style={themedStyles.button}
+          >
             Register
           </Button>
         </CardContent>
@@ -101,7 +230,7 @@ export default function RegisterPage() {
         </CardFooter>
       </Card>
     </View>
-  )
+  );
 }
 
 const getThemedStyles = (colors: ThemeContextType["colors"]) =>
@@ -145,4 +274,37 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       color: colors.primary,
       fontWeight: "600",
     },
-  })
+    referralSection: {
+      gap: 8,
+    },
+    referralMessage: {
+      paddingHorizontal: 4,
+    },
+    referralMessageText: {
+      fontSize: 12,
+      fontWeight: "500",
+    },
+    referralBonus: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 4,
+      paddingVertical: 8,
+      backgroundColor: colors.primary + "10",
+      borderRadius: 6,
+    },
+    referralBonusText: {
+      fontSize: 12,
+      color: colors.primary,
+      fontWeight: "500",
+      flex: 1,
+    },
+    loadingIcon: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 2,
+      borderColor: colors.primary,
+      borderTopColor: "transparent",
+    },
+  });

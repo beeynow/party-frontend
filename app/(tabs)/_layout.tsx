@@ -1,89 +1,48 @@
-"use client";
-
 import { Tabs } from "expo-router";
-import { Text } from "react-native";
+import { Home, Users, Trophy, User } from "lucide-react-native";
 import { useTheme } from "@/components/theme-context";
-import { LayoutDashboard, DollarSign, User } from "lucide-react-native"; // Changed Settings to User icon
 
-export default function TabsLayout() {
+export default function TabLayout() {
   const { colors } = useTheme();
 
   return (
     <Tabs
       screenOptions={{
+        headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.cardBackground,
-          borderTopColor: colors.headerBorder,
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
         },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
       }}
     >
       <Tabs.Screen
         name="overview"
         options={{
-          title: "Home",
-          headerShown: false,
-          tabBarLabel: ({ focused }) => (
-            <Text
-              style={{
-                color: focused ? colors.primary : colors.textSecondary,
-                fontSize: 12,
-              }}
-            >
-              Overview
-            </Text>
-          ),
-          tabBarIcon: ({ focused }) => (
-            <LayoutDashboard
-              color={focused ? colors.primary : colors.textSecondary}
-              size={24}
-            />
-          ),
+          title: "Overview",
+          tabBarIcon: ({ size, color }) => <Home size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="earnings"
+        name="referrals"
         options={{
-          title: "Earnings",
-          headerShown: false,
-          tabBarLabel: ({ focused }) => (
-            <Text
-              style={{
-                color: focused ? colors.primary : colors.textSecondary,
-                fontSize: 12,
-              }}
-            >
-              Earnings
-            </Text>
-          ),
-          tabBarIcon: ({ focused }) => (
-            <DollarSign
-              color={focused ? colors.primary : colors.textSecondary}
-              size={24}
-            />
-          ),
+          title: "Referrals",
+          tabBarIcon: ({ size, color }) => <Users size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="profile" // Changed name from settings to profile
+        name="leaderboard"
         options={{
-          title: "Profile", // Changed title from Settings to Profile
-          headerShown: false,
-          tabBarLabel: ({ focused }) => (
-            <Text
-              style={{
-                color: focused ? colors.primary : colors.textSecondary,
-                fontSize: 12,
-              }}
-            >
-              Profile
-            </Text>
-          ),
-          tabBarIcon: ({ focused }) => (
-            <User
-              color={focused ? colors.primary : colors.textSecondary}
-              size={24}
-            />
-          ), // Changed icon to User
+          title: "Leaderboard",
+          tabBarIcon: ({ size, color }) => <Trophy size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ size, color }) => <User size={size} color={color} />,
         }}
       />
     </Tabs>

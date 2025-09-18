@@ -1,10 +1,15 @@
 const BACKEND_BASE_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:3000/api/auth";
 
+const REFERRAL_BASE_URL =
+  process.env.EXPO_PUBLIC_BACKEND_URL?.replace("/api/auth", "/api/referral") ||
+  "http://localhost:3000/api/referral";
+
 export async function registerUser(data: {
   name: string;
   email: string;
   password: string;
+  referralCode?: string;
 }) {
   const response = await fetch(`${BACKEND_BASE_URL}/register`, {
     method: "POST",
@@ -67,8 +72,6 @@ export async function logoutUser() {
 }
 
 export async function getDashboardData() {
-  const startTime = Date.now(); // Record start time
-
   const token = await import("./auth-storage").then((m) => m.getAuthToken());
   const response = await fetch(`${BACKEND_BASE_URL}/dashboard`, {
     method: "GET",
@@ -78,6 +81,83 @@ export async function getDashboardData() {
     },
   });
   const result = await response.json();
-  const endTime = Date.now(); // Record end time
   return result;
+}
+
+// Referral API Functions
+export async function verifyReferralCode(referralCode: string) {
+  try {
+    const response = await fetch(
+      `${REFERRAL_BASE_URL}/verify/${referralCode}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error verifying referral code:", error);
+    return { valid: false, message: "Error verifying referral code" };
+  }
+}
+
+export async function getReferralStats() {
+  const token = await import("./auth-storage").then((m) => m.getAuthToken());
+  try {
+    const response = await fetch(`${REFERRAL_BASE_URL}/stats`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error getting referral stats:", error);
+    return { message: "Error getting referral stats" };
+  }
+}
+
+export async function getReferralHistory(page: number = 1, limit: number = 10) {
+  const token = await import("./auth-storage").then((m) => m.getAuthToken());
+  try {
+    const response = await fetch(
+      `${REFERRAL_BASE_URL}/history?page=${page}&limit=${limit}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      }
+    );
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error getting referral history:", error);
+    return { message: "Error getting referral history" };
+  }
+}
+
+export async function getReferralLeaderboard(limit: number = 10) {
+  try {
+    const response = await fetch(
+      `${REFERRAL_BASE_URL}/leaderboard?limit=${limit}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error getting referral leaderboard:", error);
+    return { message: "Error getting referral leaderboard" };
+  }
 }
