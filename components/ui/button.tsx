@@ -1,6 +1,6 @@
 "use client";
 
-import type React from "react";
+import React from "react";
 import {
   TouchableOpacity,
   Text,
@@ -19,7 +19,7 @@ interface ButtonProps {
   disabled?: boolean;
   variant?: "default" | "outline" | "link";
   style?: ViewStyle;
-  textStyle?: TextStyle; // This style will now only apply if children is Text
+  textStyle?: TextStyle;
 }
 
 export function Button({
@@ -29,25 +29,28 @@ export function Button({
   disabled = false,
   variant = "default",
   style,
-  textStyle, // textStyle is now less directly used by the Button itself
+  textStyle,
 }: ButtonProps) {
   const { colors } = useTheme();
   const themedStyles = getThemedStyles(colors);
 
   const buttonStyles = [themedStyles.button, themedStyles[variant], style];
 
-  // If children is a string or number, we'll wrap it in a Text component with appropriate styles.
-  // Otherwise, we'll render it directly (e.g., for icons).
-  const renderChildren = () => {
-    if (typeof children === "string" || typeof children === "number") {
+  // Recursively wrap strings/numbers in <Text>
+  const renderChildren = (child: React.ReactNode): React.ReactNode => {
+    if (typeof child === "string" || typeof child === "number") {
       const buttonTextStyles = [
         themedStyles.buttonText,
         themedStyles[`${variant}Text`],
         textStyle,
       ];
-      return <Text style={buttonTextStyles}>{children}</Text>;
+      return <Text style={buttonTextStyles}>{child}</Text>;
+    } else if (Array.isArray(child)) {
+      return child.map((c, i) => (
+        <React.Fragment key={i}>{renderChildren(c)}</React.Fragment>
+      ));
     }
-    return children;
+    return child; // Already a React element (like an icon)
   };
 
   return (
@@ -61,7 +64,7 @@ export function Button({
           color={variant === "default" ? colors.white : colors.primary}
         />
       ) : (
-        renderChildren()
+        renderChildren(children)
       )}
     </TouchableOpacity>
   );
@@ -75,7 +78,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       borderRadius: 6,
       alignItems: "center",
       justifyContent: "center",
-      flexDirection: "row", // Added to properly align icons and text if both are present
+      flexDirection: "row", // To align icons + text
     },
     default: {
       backgroundColor: colors.primary,

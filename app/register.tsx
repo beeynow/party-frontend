@@ -1,10 +1,7 @@
 "use client";
 
-// import { useState } from "react"
 import { useState, useEffect } from "react";
 import { View, Text, StyleSheet } from "react-native";
-// import { Link, useRouter } from "expo-router"
-// import { registerUser } from "@/lib/api"
 import { Link, useRouter, useLocalSearchParams } from "expo-router";
 import { registerUser, verifyReferralCode } from "@/lib/api";
 import {
@@ -80,7 +77,6 @@ export default function RegisterPage() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const result = await registerUser({ name, email, password });
       const registrationData = {
         name,
         email,
@@ -91,19 +87,19 @@ export default function RegisterPage() {
           }),
       };
 
-      const result1 = await registerUser(registrationData);
-      if (result1.message) {
-        let successMessage = result.message;
-        if (result1.referredBy) {
+      const result = await registerUser(registrationData);
+
+      if (result.success || result.message) {
+        let successMessage = result.message || "Registration successful!";
+        if (result.referredBy) {
           successMessage += ` You were referred by ${result.referredBy}!`;
-          console.log("Registration data being sent:", registrationData);
         }
 
-        console.log("Registration response:", result1);
+        console.log("Registration data being sent:", registrationData);
+        console.log("Registration response:", result);
 
         toast({
           title: "Registration Successful",
-          //  description: result.message,
           description: successMessage,
           variant: "success",
         });

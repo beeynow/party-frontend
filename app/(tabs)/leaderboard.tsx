@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import {
   View,
@@ -7,11 +9,11 @@ import {
   RefreshControl,
 } from "react-native";
 import { getReferralLeaderboard } from "@/lib/api";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
 import { useToast } from "@/components/ui/use-toast";
-import { Trophy, Medal, Award, Users, Coins } from "lucide-react-native";
+import { Trophy, Medal, Crown, Users } from "lucide-react-native";
 
 interface LeaderboardEntry {
   rank: number;
@@ -34,8 +36,24 @@ export default function LeaderboardScreen() {
 
     try {
       const result = await getReferralLeaderboard(20);
-      if (result.data) {
-        setLeaderboard(result.data);
+
+      if (result.success && result.data) {
+        const leaderboardData = result.data.leaderboard || result.data;
+
+        if (Array.isArray(leaderboardData)) {
+          const mappedData = leaderboardData.map(
+            (item: any, index: number) => ({
+              rank: index + 1,
+              name: item.name || item.username || "Anonymous",
+              referralCode: item.referralCode || item.code || "",
+              totalReferrals: item.totalReferrals || item.referrals || 0,
+              totalCoins: item.totalCoins || item.coins || 0,
+            })
+          );
+          setLeaderboard(mappedData);
+        } else {
+          setLeaderboard([]);
+        }
       } else {
         toast({
           title: "Error",
@@ -63,28 +81,127 @@ export default function LeaderboardScreen() {
     fetchLeaderboard(true);
   };
 
+  const renderAvatar = (name: string, rank: number) => {
+    const getRankColor = (rank: number) => {
+      if (rank <= 3) return colors.primary;
+      if (rank <= 10) return colors.textPrimary;
+      return colors.textSecondary;
+    };
+
+    return (
+      <View style={[themedStyles.avatar, { borderColor: getRankColor(rank) }]}>
+        <Text style={themedStyles.avatarText}>{rank}</Text>
+        {rank === 1 && (
+          <View style={themedStyles.crownContainer}>
+            <Crown color={colors.textPrimary} size={14} />
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const getRankIcon = (rank: number) => {
     switch (rank) {
       case 1:
-        return <Trophy color="#FFD700" size={24} />;
+        return <Crown color="#FFD700" size={18} />;
       case 2:
-        return <Medal color="#C0C0C0" size={24} />;
+        return <Medal color="#C0C0C0" size={18} />;
       case 3:
-        return <Award color="#CD7F32" size={24} />;
+        return <Medal color="#CD7F32" size={18} />;
       default:
         return (
           <View
             style={[
-              themedStyles.rankNumber,
-              { backgroundColor: colors.primary + "20" },
+              themedStyles.rankBadge,
+              { backgroundColor: rank <= 10 ? "#8B5CF6" : "#6B7280" },
             ]}
           >
-            <Text style={[themedStyles.rankText, { color: colors.primary }]}>
-              {rank}
-            </Text>
+            <Text style={themedStyles.rankBadgeText}>{rank}</Text>
           </View>
         );
     }
+  };
+
+  const renderLeaderboardRows = () => {
+    if (leaderboard.length === 0) return null;
+
+    return (
+      <View style={themedStyles.leaderboardContainer}>
+        {leaderboard.map((entry) => {
+          const isTopTen = entry.rank <= 10;
+          const isTopThree = entry.rank <= 3;
+
+          const cardStyle = [themedStyles.modernCard];
+
+          if (isTopThree) {
+            //@ts-ignore
+            cardStyle.push(themedStyles.topThreeCard);
+          } else if (isTopTen) {
+            //@ts-ignore
+            cardStyle.push(themedStyles.topTenCard);
+          }
+
+          return (
+            <Card
+              key={entry.rank}
+              //@ts-ignore
+              style={cardStyle}
+            >
+              <CardContent style={themedStyles.cardContent}>
+                {/* Left section with rank and avatar */}
+                <View style={themedStyles.leftSection}>
+                  {/* <View style={themedStyles.rankContainer}>
+                    {getRankIcon(entry.rank)}
+                  </View> */}
+                  {renderAvatar(entry.name, entry.rank)}
+                </View>
+
+                {/* Center section with name */}
+                <View style={themedStyles.centerSection}>
+                  <Text
+                    style={[
+                      themedStyles.userName,
+                      isTopThree && themedStyles.topThreeUserName,
+                    ]}
+                  >
+                    {entry.name}
+                  </Text>
+                </View>
+
+                {/* Right section with coins and referrals */}
+                <View style={themedStyles.rightSection}>
+                  <View style={themedStyles.statsContainer}>
+                    <Text
+                      style={[
+                        themedStyles.coinsText,
+                        isTopThree && themedStyles.topThreeCoinsText,
+                      ]}
+                    >
+                      {entry.totalCoins}
+                    </Text>
+                    <Text style={themedStyles.coinsLabel}>coins</Text>
+                  </View>
+                  <View style={themedStyles.referralsContainer}>
+                    <Users
+                      color={isTopThree ? colors.primary : colors.textPrimary}
+                      size={14}
+                    />
+                    <Text
+                      style={[
+                        themedStyles.referralsText,
+                        isTopThree && themedStyles.topThreeReferralsText,
+                      ]}
+                    >
+                      {entry.totalReferrals}
+                    </Text>
+                  </View>
+                </View>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </View>
+    );
   };
 
   const themedStyles = getThemedStyles(colors);
@@ -98,101 +215,36 @@ export default function LeaderboardScreen() {
   }
 
   return (
-    <ScrollView
-      style={themedStyles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
-      <View style={themedStyles.header}>
-        <Text style={themedStyles.title}>🏆 Leaderboard</Text>
-        <Text style={themedStyles.subtitle}>
-          Top referrers in the community
-        </Text>
-      </View>
-
-      {leaderboard.length > 0 ? (
-        <View style={themedStyles.leaderboardContainer}>
-          {leaderboard.slice(0, 3).map((entry) => (
-            <Card
-              key={entry.rank}
-              //@ts-ignore
-              style={[
-                themedStyles.topCard,
-                entry.rank === 1 && themedStyles.goldCard,
-                entry.rank === 2 && themedStyles.silverCard,
-                entry.rank === 3 && themedStyles.bronzeCard,
-              ]}
-            >
-              <CardContent style={themedStyles.topCardContent}>
-                <View style={themedStyles.topCardHeader}>
-                  {getRankIcon(entry.rank)}
-                  <Text style={themedStyles.topName}>{entry.name}</Text>
-                </View>
-                <View style={themedStyles.topStats}>
-                  <View style={themedStyles.topStat}>
-                    <Users color={colors.primary} size={16} />
-                    <Text style={themedStyles.topStatText}>
-                      {entry.totalReferrals}
-                    </Text>
-                  </View>
-                  <View style={themedStyles.topStat}>
-                    <Coins color={colors.primary} size={16} />
-                    <Text style={themedStyles.topStatText}>
-                      {entry.totalCoins}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={themedStyles.topCode}>
-                  Code: {entry.referralCode}
-                </Text>
-              </CardContent>
-            </Card>
-          ))}
-
-          {leaderboard.slice(3).map((entry) => (
-            <Card key={entry.rank} style={themedStyles.regularCard}>
-              <CardContent style={themedStyles.regularCardContent}>
-                <View style={themedStyles.regularRank}>
-                  {getRankIcon(entry.rank)}
-                </View>
-                <View style={themedStyles.regularInfo}>
-                  <Text style={themedStyles.regularName}>{entry.name}</Text>
-                  <Text style={themedStyles.regularCode}>
-                    Code: {entry.referralCode}
-                  </Text>
-                </View>
-                <View style={themedStyles.regularStats}>
-                  <View style={themedStyles.regularStat}>
-                    <Users color={colors.textSecondary} size={14} />
-                    <Text style={themedStyles.regularStatText}>
-                      {entry.totalReferrals}
-                    </Text>
-                  </View>
-                  <View style={themedStyles.regularStat}>
-                    <Coins color={colors.textSecondary} size={14} />
-                    <Text style={themedStyles.regularStatText}>
-                      {entry.totalCoins}
-                    </Text>
-                  </View>
-                </View>
-              </CardContent>
-            </Card>
-          ))}
+    <View style={themedStyles.container}>
+      <ScrollView
+        style={themedStyles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        <View style={themedStyles.header}>
+          <Text style={themedStyles.headerTitle}>LEADERBOARD</Text>
+          <Text style={themedStyles.headerSubtitle}>
+            Top performers this month
+          </Text>
         </View>
-      ) : (
-        <Card style={themedStyles.emptyCard}>
-          <CardContent style={themedStyles.emptyState}>
-            <Trophy color={colors.textSecondary} size={48} />
-            <Text style={themedStyles.emptyTitle}>No Data Available</Text>
-            <Text style={themedStyles.emptyDesc}>
-              Be the first to start referring friends and appear on the
-              leaderboard!
-            </Text>
-          </CardContent>
-        </Card>
-      )}
-    </ScrollView>
+
+        {leaderboard.length > 0 ? (
+          renderLeaderboardRows()
+        ) : (
+          <Card style={themedStyles.emptyCard}>
+            <CardContent style={themedStyles.emptyState}>
+              <Trophy color={colors.textSecondary} size={48} />
+              <Text style={themedStyles.emptyTitle}>No Data Available</Text>
+              <Text style={themedStyles.emptyDesc}>
+                Be the first to start referring friends and appear on the
+                leaderboard!
+              </Text>
+            </CardContent>
+          </Card>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -202,6 +254,9 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       flex: 1,
       backgroundColor: colors.background,
     },
+    scrollView: {
+      flex: 1,
+    },
     loadingContainer: {
       flex: 1,
       justifyContent: "center",
@@ -209,127 +264,163 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       backgroundColor: colors.background,
     },
     loadingText: {
-      color: colors.textSecondary,
+      color: colors.textPrimary,
       fontSize: 16,
     },
     header: {
-      padding: 20,
-      paddingBottom: 0,
+      paddingTop: 60,
+      paddingBottom: 30,
+      paddingHorizontal: 20,
+      alignItems: "center",
+      backgroundColor: colors.background,
     },
-    title: {
+    headerTitle: {
       fontSize: 28,
       fontWeight: "bold",
-      color: colors.textSecondary,
+      color: colors.textPrimary,
+      letterSpacing: 1,
+      marginBottom: 4,
     },
-    subtitle: {
-      fontSize: 16,
-      color: colors.textSecondary,
-      marginTop: 4,
-    },
-    leaderboardContainer: {
-      padding: 20,
-      gap: 12,
-    },
-    topCard: {
-      marginBottom: 8,
-    },
-    goldCard: {
-      borderColor: "#FFD700",
-      borderWidth: 2,
-    },
-    silverCard: {
-      borderColor: "#C0C0C0",
-      borderWidth: 2,
-    },
-    bronzeCard: {
-      borderColor: "#CD7F32",
-      borderWidth: 2,
-    },
-    topCardContent: {
-      alignItems: "center",
-      paddingVertical: 20,
-    },
-    topCardHeader: {
-      alignItems: "center",
-      gap: 12,
-      marginBottom: 16,
-    },
-    topName: {
-      fontSize: 20,
-      fontWeight: "bold",
-      color: colors.textSecondary,
-    },
-    topStats: {
-      flexDirection: "row",
-      gap: 24,
-      marginBottom: 12,
-    },
-    topStat: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-    },
-    topStatText: {
-      fontSize: 18,
-      fontWeight: "600",
-      color: colors.textSecondary,
-    },
-    topCode: {
+    headerSubtitle: {
       fontSize: 14,
       color: colors.textSecondary,
       fontWeight: "500",
     },
-    regularCard: {
-      marginBottom: 8,
+    leaderboardContainer: {
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingBottom: 20,
     },
-    regularCardContent: {
+    modernCard: {
+      marginBottom: 12,
+      borderRadius: 16,
+      backgroundColor: colors.cardBackground,
+      shadowColor: "#000",
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+      elevation: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    topThreeCard: {
+      borderColor: colors.primary,
+      borderWidth: 2,
+      backgroundColor: colors.cardBackground,
+      shadowOpacity: 0.2,
+      shadowColor: colors.primary,
+    },
+    topTenCard: {
+      borderColor: "#8B5CF6",
+      borderWidth: 1.5,
+      backgroundColor: colors.cardBackground,
+      shadowOpacity: 0.15,
+      shadowColor: "#8B5CF6",
+    },
+    cardContent: {
       flexDirection: "row",
       alignItems: "center",
-      paddingVertical: 16,
-      gap: 16,
+      padding: 16,
     },
-    regularRank: {
-      width: 40,
+    leftSection: {
+      flexDirection: "row",
       alignItems: "center",
+      width: 80,
     },
-    rankNumber: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      alignItems: "center",
-      justifyContent: "center",
+    rankContainer: {
+      marginRight: 12,
     },
-    rankText: {
-      fontSize: 12,
-      fontWeight: "bold",
-    },
-    regularInfo: {
+    centerSection: {
       flex: 1,
+      // paddingHorizontal: 12,
     },
-    regularName: {
+    rightSection: {
+      alignItems: "flex-end",
+      minWidth: 80,
+    },
+    userName: {
       fontSize: 16,
       fontWeight: "600",
-      color: colors.textSecondary,
+      color: colors.textPrimary,
     },
-    regularCode: {
+    topThreeUserName: {
+      fontSize: 18,
+      fontWeight: "700",
+      color: colors.textPrimary,
+    },
+    statsContainer: {
+      alignItems: "flex-end",
+      marginBottom: 4,
+    },
+    coinsText: {
+      fontSize: 18,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+    },
+    topThreeCoinsText: {
+      fontSize: 20,
+      color: colors.textPrimary,
+    },
+    coinsLabel: {
       fontSize: 12,
       color: colors.textSecondary,
-      marginTop: 2,
+      fontWeight: "500",
     },
-    regularStats: {
-      gap: 8,
-    },
-    regularStat: {
+    referralsContainer: {
       flexDirection: "row",
       alignItems: "center",
       gap: 4,
     },
-    regularStatText: {
+    referralsText: {
       fontSize: 14,
+      fontWeight: "600",
       color: colors.textSecondary,
+    },
+    topThreeReferralsText: {
+      color: colors.textPrimary,
+      fontWeight: "700",
+    },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.cardBackground,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 2,
+      position: "relative",
+    },
+    avatarText: {
+      fontSize: 14,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+    },
+    crownContainer: {
+      position: "absolute",
+      top: -6,
+      right: -4,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 8,
+      padding: 2,
+    },
+    rankBadge: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    rankBadgeText: {
+      fontSize: 12,
+      fontWeight: "bold",
+      color: "#FFFFFF",
     },
     emptyCard: {
       margin: 20,
+      backgroundColor: colors.cardBackground,
     },
     emptyState: {
       alignItems: "center",
@@ -339,7 +430,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
     emptyTitle: {
       fontSize: 18,
       fontWeight: "600",
-      color: colors.textSecondary,
+      color: colors.textPrimary,
     },
     emptyDesc: {
       fontSize: 14,

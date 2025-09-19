@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import {
   View,
@@ -11,7 +13,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
 import { useToast } from "@/components/ui/use-toast";
-import { Coins, Users, Trophy, Gift } from "lucide-react-native";
+import { Coins, Users, Gift } from "lucide-react-native";
 
 interface UserData {
   id: string;
@@ -42,7 +44,7 @@ export default function OverviewScreen() {
 
     try {
       const result = await getDashboardData();
-      if (result.user) {
+      if (result.success && result.user) {
         setUserData(result.user);
       } else {
         toast({
@@ -174,6 +176,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
   StyleSheet.create({
     container: {
       flex: 1,
+      paddingTop: 25,
       backgroundColor: colors.background,
     },
     loadingContainer: {
