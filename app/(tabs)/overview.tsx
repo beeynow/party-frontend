@@ -8,12 +8,12 @@ import {
   ScrollView,
   RefreshControl,
 } from "react-native";
-import { getDashboardData } from "@/lib/api";
+import { getDashboardData, getTotalUserCount } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
 import { useToast } from "@/components/ui/use-toast";
-import { Coins, Users, Gift } from "lucide-react-native";
+import { Coins, Users, Gift, UserCheck } from "lucide-react-native";
 
 interface UserData {
   id: string;
@@ -33,6 +33,9 @@ interface UserData {
 
 export default function OverviewScreen() {
   const [userData, setUserData] = useState<UserData | null>(null);
+  const [totalUsers, setTotalUsers] = useState<number>(0);
+  const [ActiveUsers, setActiveUsers] = useState<number>(0);
+  const [verifiededUsers, setVerifiedUsers] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { colors } = useTheme();
@@ -43,15 +46,37 @@ export default function OverviewScreen() {
     else setLoading(true);
 
     try {
-      const result = await getDashboardData();
-      if (result.success && result.user) {
-        setUserData(result.user);
+      const [
+        dashboardResult,
+        userCountResult,
+        userActiveResult,
+        userVerifiedResult,
+      ] = await Promise.all([
+        getDashboardData(),
+        getTotalUserCount(),
+        getTotalUserCount(),
+        getTotalUserCount(),
+      ]);
+
+      if (dashboardResult.success && dashboardResult.user) {
+        setUserData(dashboardResult.user);
       } else {
         toast({
           title: "Error",
-          description: result.message || "Failed to load dashboard data",
+          description:
+            dashboardResult.message || "Failed to load dashboard data",
           variant: "destructive",
         });
+      }
+
+      if (userCountResult.success) {
+        setTotalUsers(userCountResult.totalUsers || 0);
+      }
+      if (userActiveResult.success) {
+        setActiveUsers(userActiveResult.activeUsers || 0);
+      }
+      if (userVerifiedResult.success) {
+        setVerifiedUsers(userVerifiedResult.verifiedUsers || 0);
       }
     } catch (error: any) {
       toast({
@@ -117,6 +142,36 @@ export default function OverviewScreen() {
             <Text style={themedStyles.statLabel}>Referrals</Text>
           </CardContent>
         </Card>
+
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <UserCheck color={colors.primary} size={24} />
+            </View>
+            <Text style={themedStyles.statValue}>{totalUsers}</Text>
+            <Text style={themedStyles.statLabel}>Total Users</Text>
+          </CardContent>
+        </Card>
+
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <UserCheck color={colors.primary} size={24} />
+            </View>
+            <Text style={themedStyles.statValue}>{ActiveUsers}</Text>
+            <Text style={themedStyles.statLabel}>Active Users</Text>
+          </CardContent>
+        </Card>
+
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <UserCheck color={colors.primary} size={24} />
+            </View>
+            <Text style={themedStyles.statValue}>{verifiededUsers}</Text>
+            <Text style={themedStyles.statLabel}>Verified Users</Text>
+          </CardContent>
+        </Card>
       </View>
 
       <Card style={themedStyles.card}>
@@ -176,7 +231,6 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      paddingTop: 25,
       backgroundColor: colors.background,
     },
     loadingContainer: {
@@ -208,9 +262,11 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       paddingHorizontal: 20,
       gap: 12,
       marginTop: 20,
+      flexWrap: "wrap",
     },
     statCard: {
-      flex: 1,
+      flexBasis: "30%",
+      minWidth: 100,
     },
     statContent: {
       alignItems: "center",

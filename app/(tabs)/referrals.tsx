@@ -351,7 +351,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       marginRight: 16,
     },
     friendInitial: {
-      color: "#fff",
+      color: colors.textPrimary,
       fontSize: 18,
       fontWeight: "bold",
     },

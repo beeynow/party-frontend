@@ -7,13 +7,24 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
+  TouchableOpacity,
 } from "react-native";
-import { getReferralLeaderboard } from "@/lib/api";
+import { getReferralLeaderboard, getTotalUserCount } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
 import { useToast } from "@/components/ui/use-toast";
-import { Trophy, Medal, Crown, Users } from "lucide-react-native";
+import {
+  Trophy,
+  Medal,
+  Crown,
+  Users,
+  Settings,
+  BarChart3,
+  UserCheck,
+  Shield,
+} from "lucide-react-native";
+import { getUserData } from "@/lib/auth-storage";
 
 interface LeaderboardEntry {
   rank: number;
@@ -23,19 +34,81 @@ interface LeaderboardEntry {
   totalCoins: number;
 }
 
+interface AdminStats {
+  totalUsers: number;
+  verifiedUsers: number;
+  activeUsers: number;
+}
+
 export default function LeaderboardScreen() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminStats, setAdminStats] = useState<AdminStats>({
+    totalUsers: 0,
+    verifiedUsers: 0,
+    activeUsers: 0,
+  });
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const { colors } = useTheme();
   const { toast } = useToast();
 
+  useEffect(() => {
+    const loadUserAndData = async () => {
+      try {
+        const userData = await getUserData();
+
+        console.log("[v0] User data loaded:", userData);
+        const adminStatus =
+          userData?.is_admin === true && userData?.adminConfirmed === true;
+        setIsAdmin(adminStatus);
+        console.log("[v0] Admin status:", adminStatus);
+
+        await fetchLeaderboard();
+
+        if (adminStatus) {
+          await fetchAdminStats();
+        }
+      } catch (error) {
+        console.log("[v0] Error loading user data:", error);
+        setIsAdmin(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUserAndData();
+  }, []);
+
+  const fetchAdminStats = async () => {
+    try {
+      const result = await getTotalUserCount();
+      console.log("[v0] Admin stats result:", result);
+
+      if (result.success) {
+        setAdminStats({
+          totalUsers: result.totalUsers || 0,
+          verifiedUsers: result.verifiedUsers || 0,
+          activeUsers: result.activeUsers || 0,
+        });
+      }
+    } catch (error) {
+      console.log("[v0] Failed to fetch admin stats:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load admin statistics",
+        variant: "destructive",
+      });
+    }
+  };
+
   const fetchLeaderboard = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
-    else setLoading(true);
 
     try {
       const result = await getReferralLeaderboard(20);
+      console.log("[v0] Leaderboard result:", result);
 
       if (result.success && result.data) {
         const leaderboardData = result.data.leaderboard || result.data;
@@ -62,6 +135,7 @@ export default function LeaderboardScreen() {
         });
       }
     } catch (error: any) {
+      console.log("[v0] Leaderboard fetch error:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to load leaderboard",
@@ -69,22 +143,19 @@ export default function LeaderboardScreen() {
       });
     } finally {
       if (isRefresh) setRefreshing(false);
-      else setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchLeaderboard();
-  }, []);
-
-  const onRefresh = () => {
-    fetchLeaderboard(true);
+  const onRefresh = async () => {
+    await fetchLeaderboard(true);
+    if (isAdmin) {
+      await fetchAdminStats();
+    }
   };
 
   const renderAvatar = (name: string, rank: number) => {
     const getRankColor = (rank: number) => {
       if (rank <= 3) return colors.primary;
-      if (rank <= 10) return colors.textPrimary;
       return colors.textSecondary;
     };
 
@@ -103,7 +174,7 @@ export default function LeaderboardScreen() {
   const getRankIcon = (rank: number) => {
     switch (rank) {
       case 1:
-        return <Crown color="#FFD700" size={18} />;
+        return <Crown color={colors.primary} size={18} />;
       case 2:
         return <Medal color="#C0C0C0" size={18} />;
       case 3:
@@ -113,7 +184,9 @@ export default function LeaderboardScreen() {
           <View
             style={[
               themedStyles.rankBadge,
-              { backgroundColor: rank <= 10 ? "#8B5CF6" : "#6B7280" },
+              {
+                backgroundColor: rank <= 10 ? "#8B5CF6" : colors.textSecondary,
+              },
             ]}
           >
             <Text style={themedStyles.rankBadgeText}>{rank}</Text>
@@ -148,15 +221,16 @@ export default function LeaderboardScreen() {
               style={cardStyle}
             >
               <CardContent style={themedStyles.cardContent}>
-                {/* Left section with rank and avatar */}
                 <View style={themedStyles.leftSection}>
-                  {/* <View style={themedStyles.rankContainer}>
+                  <View
+                    //@ts-ignore
+                    style={themedStyles.rankContainer}
+                  >
                     {getRankIcon(entry.rank)}
-                  </View> */}
+                  </View>
                   {renderAvatar(entry.name, entry.rank)}
                 </View>
 
-                {/* Center section with name */}
                 <View style={themedStyles.centerSection}>
                   <Text
                     style={[
@@ -168,7 +242,6 @@ export default function LeaderboardScreen() {
                   </Text>
                 </View>
 
-                {/* Right section with coins and referrals */}
                 <View style={themedStyles.rightSection}>
                   <View style={themedStyles.statsContainer}>
                     <Text
@@ -204,12 +277,108 @@ export default function LeaderboardScreen() {
     );
   };
 
+  const renderAdminDashboard = () => {
+    return (
+      <View style={themedStyles.adminContainer}>
+        <View style={themedStyles.header}>
+          <Shield color={colors.primary} size={32} />
+          <Text style={themedStyles.headerTitle}>ADMIN DASHBOARD</Text>
+          <Text style={themedStyles.headerSubtitle}>
+            System Overview & Management
+          </Text>
+        </View>
+
+        <View style={themedStyles.adminStatsContainer}>
+          <Card style={themedStyles.adminStatCard}>
+            <CardContent style={themedStyles.adminStatContent}>
+              <Users color={colors.primary} size={24} />
+              <Text style={themedStyles.adminStatNumber}>
+                {adminStats.totalUsers}
+              </Text>
+              <Text style={themedStyles.adminStatLabel}>Total Users</Text>
+            </CardContent>
+          </Card>
+
+          <Card style={themedStyles.adminStatCard}>
+            <CardContent style={themedStyles.adminStatContent}>
+              <UserCheck color="#10B981" size={24} />
+              <Text
+                style={[themedStyles.adminStatNumber, { color: "#10B981" }]}
+              >
+                {adminStats.verifiedUsers}
+              </Text>
+              <Text style={themedStyles.adminStatLabel}>Verified Users</Text>
+            </CardContent>
+          </Card>
+
+          <Card style={themedStyles.adminStatCard}>
+            <CardContent style={themedStyles.adminStatContent}>
+              <BarChart3 color="#F59E0B" size={24} />
+              <Text
+                style={[themedStyles.adminStatNumber, { color: "#F59E0B" }]}
+              >
+                {adminStats.activeUsers}
+              </Text>
+              <Text style={themedStyles.adminStatLabel}>Active Users</Text>
+            </CardContent>
+          </Card>
+        </View>
+
+        <View style={themedStyles.adminActionsContainer}>
+          <TouchableOpacity style={themedStyles.adminActionButton}>
+            <Settings color={colors.textPrimary} size={20} />
+            <Text style={themedStyles.adminActionText}>System Settings</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={themedStyles.adminActionButton}
+            onPress={() => setShowLeaderboard(!showLeaderboard)}
+          >
+            <Trophy color={colors.textPrimary} size={20} />
+            <Text style={themedStyles.adminActionText}>
+              {showLeaderboard ? "Hide Leaderboard" : "View Leaderboard"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {showLeaderboard && (
+          <View style={themedStyles.adminLeaderboardSection}>
+            <View style={themedStyles.leaderboardHeader}>
+              <Trophy color={colors.primary} size={24} />
+              <Text style={themedStyles.leaderboardSectionTitle}>
+                LEADERBOARD
+              </Text>
+              <Text style={themedStyles.leaderboardSectionSubtitle}>
+                Top performers this month
+              </Text>
+            </View>
+
+            {leaderboard.length > 0 ? (
+              renderLeaderboardRows()
+            ) : (
+              <Card style={themedStyles.emptyCard}>
+                <CardContent style={themedStyles.emptyState}>
+                  <Trophy color={colors.textSecondary} size={48} />
+                  <Text style={themedStyles.emptyTitle}>No Data Available</Text>
+                  <Text style={themedStyles.emptyDesc}>
+                    Be the first to start referring friends and appear on the
+                    leaderboard!
+                  </Text>
+                </CardContent>
+              </Card>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const themedStyles = getThemedStyles(colors);
 
-  if (loading && leaderboard.length === 0) {
+  if (loading) {
     return (
       <View style={themedStyles.loadingContainer}>
-        <Text style={themedStyles.loadingText}>Loading leaderboard...</Text>
+        <Text style={themedStyles.loadingText}>Loading...</Text>
       </View>
     );
   }
@@ -222,26 +391,32 @@ export default function LeaderboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <View style={themedStyles.header}>
-          <Text style={themedStyles.headerTitle}>LEADERBOARD</Text>
-          <Text style={themedStyles.headerSubtitle}>
-            Top performers this month
-          </Text>
-        </View>
-
-        {leaderboard.length > 0 ? (
-          renderLeaderboardRows()
+        {isAdmin ? (
+          renderAdminDashboard()
         ) : (
-          <Card style={themedStyles.emptyCard}>
-            <CardContent style={themedStyles.emptyState}>
-              <Trophy color={colors.textSecondary} size={48} />
-              <Text style={themedStyles.emptyTitle}>No Data Available</Text>
-              <Text style={themedStyles.emptyDesc}>
-                Be the first to start referring friends and appear on the
-                leaderboard!
+          <>
+            <View style={themedStyles.header}>
+              <Text style={themedStyles.headerTitle}>LEADERBOARD</Text>
+              <Text style={themedStyles.headerSubtitle}>
+                Top performers this month
               </Text>
-            </CardContent>
-          </Card>
+            </View>
+
+            {leaderboard.length > 0 ? (
+              renderLeaderboardRows()
+            ) : (
+              <Card style={themedStyles.emptyCard}>
+                <CardContent style={themedStyles.emptyState}>
+                  <Trophy color={colors.textSecondary} size={48} />
+                  <Text style={themedStyles.emptyTitle}>No Data Available</Text>
+                  <Text style={themedStyles.emptyDesc}>
+                    Be the first to start referring friends and appear on the
+                    leaderboard!
+                  </Text>
+                </CardContent>
+              </Card>
+            )}
+          </>
         )}
       </ScrollView>
     </View>
@@ -250,6 +425,57 @@ export default function LeaderboardScreen() {
 
 const getThemedStyles = (colors: ThemeContextType["colors"]) =>
   StyleSheet.create({
+    adminContainer: {
+      flex: 1,
+      paddingHorizontal: 16,
+    },
+    adminStatsContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "space-between",
+      marginBottom: 24,
+      gap: 12,
+    },
+    adminStatCard: {
+      width: "48%",
+      backgroundColor: colors.cardBackground,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    adminStatContent: {
+      alignItems: "center",
+      padding: 20,
+      gap: 8,
+    },
+    adminStatNumber: {
+      fontSize: 24,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+    },
+    adminStatLabel: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: "500",
+    },
+    adminActionsContainer: {
+      gap: 12,
+    },
+    adminActionButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.cardBackground,
+      padding: 16,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 12,
+    },
+    adminActionText: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
     container: {
       flex: 1,
       backgroundColor: colors.background,
@@ -330,12 +556,8 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       alignItems: "center",
       width: 80,
     },
-    rankContainer: {
-      marginRight: 12,
-    },
     centerSection: {
       flex: 1,
-      // paddingHorizontal: 12,
     },
     rightSection: {
       alignItems: "flex-end",
@@ -406,18 +628,6 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       borderRadius: 8,
       padding: 2,
     },
-    rankBadge: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    rankBadgeText: {
-      fontSize: 12,
-      fontWeight: "bold",
-      color: "#FFFFFF",
-    },
     emptyCard: {
       margin: 20,
       backgroundColor: colors.cardBackground,
@@ -437,5 +647,39 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       color: colors.textSecondary,
       textAlign: "center",
       lineHeight: 20,
+    },
+    rankBadge: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    rankBadgeText: {
+      fontSize: 12,
+      fontWeight: "bold",
+      color: "#FFFFFF",
+    },
+    adminLeaderboardSection: {
+      marginTop: 24,
+      paddingTop: 24,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    leaderboardHeader: {
+      alignItems: "center",
+      marginBottom: 20,
+      gap: 8,
+    },
+    leaderboardSectionTitle: {
+      fontSize: 24,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+      letterSpacing: 1,
+    },
+    leaderboardSectionSubtitle: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: "500",
     },
   });

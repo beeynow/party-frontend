@@ -39,8 +39,17 @@ export const removeAuthToken = async () => {
 
 export const saveUserData = async (userData: any) => {
   try {
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(userData));
-    console.log("✅ User data cached");
+    const existingData = await getUserData();
+    const dataToSave = {
+      ...userData,
+      // Preserve admin fields if they exist in either new or existing data
+      is_admin: userData.is_admin ?? existingData?.is_admin ?? false,
+      adminConfirmed:
+        userData.adminConfirmed ?? existingData?.adminConfirmed ?? false,
+    };
+
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(dataToSave));
+    console.log("✅ User data cached with admin status:", dataToSave.is_admin);
   } catch (error) {
     console.error("❌ Saving user data failed:", error);
   }
@@ -49,10 +58,32 @@ export const saveUserData = async (userData: any) => {
 export const getUserData = async () => {
   try {
     const userData = await AsyncStorage.getItem(USER_KEY);
-    return userData ? JSON.parse(userData) : null;
+
+    if (userData) {
+      const parsed = JSON.parse(userData);
+      console.log("🔁 User data retrieved (parsed):", parsed);
+      return parsed;
+    }
+
+    console.log("⚠️ No user data found");
+    return null;
   } catch (error) {
     console.error("❌ Retrieving user data failed:", error);
     return null;
+  }
+};
+
+export const isUserAdmin = async (): Promise<boolean> => {
+  try {
+    const userData = await getUserData();
+    console.log("👤 Checking admin rights:", userData);
+
+    return (
+      userData && userData.is_admin === true && userData.adminConfirmed === true
+    );
+  } catch (error) {
+    console.error("❌ Admin check failed:", error);
+    return false;
   }
 };
 
@@ -62,6 +93,23 @@ export const isAuthenticated = async (): Promise<boolean> => {
     return !!token;
   } catch (error) {
     console.error("❌ Auth check failed:", error);
+    return false;
+  }
+};
+
+export const getAdminStatus = async (): Promise<boolean> => {
+  try {
+    const userData = await getUserData();
+    const isAdmin =
+      userData?.is_admin === true && userData?.adminConfirmed === true;
+    console.log("🔍 Admin status check:", {
+      is_admin: userData?.is_admin,
+      adminConfirmed: userData?.adminConfirmed,
+      result: isAdmin,
+    });
+    return isAdmin;
+  } catch (error) {
+    console.error("❌ Admin status check failed:", error);
     return false;
   }
 };
