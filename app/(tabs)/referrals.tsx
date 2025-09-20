@@ -12,10 +12,14 @@ import {
   Image,
 } from "react-native";
 import { getReferralStats } from "@/lib/api";
+import QRCode from "react-native-qrcode-svg";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import { useRef } from "react";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
 import { useToast } from "@/components/ui/use-toast";
-import { Copy, Users, Gift } from "lucide-react-native";
+import { Copy, Users, Gift, QrCode } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 
 interface ReferralStats {
@@ -28,12 +32,11 @@ interface ReferralStats {
       email: string;
       createdAt: string;
     };
-    referredUserName: string;
-    referredUserEmail: string;
     coinsEarned: number;
     referredAt: string;
   }>;
   referralLink: string;
+  qrCodeUrl?: string;
 }
 
 export default function ReferralsScreen() {
@@ -42,6 +45,7 @@ export default function ReferralsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const { colors } = useTheme();
   const { toast } = useToast();
+  const qrCodeRef = useRef<any>(null);
 
   const fetchReferralData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -56,6 +60,7 @@ export default function ReferralsScreen() {
           totalCoinsEarned: result.data.totals?.totalCoins || 0,
           referralHistory: result.data.history?.referralHistory || [],
           referralLink: result.data.sharing?.referralLink || "",
+          qrCodeUrl: result.data.sharing?.qrCodeUrl || "", // <-- add this
         };
 
         setStats(mappedStats);
@@ -122,6 +127,31 @@ export default function ReferralsScreen() {
     );
   }
 
+  const handleShareQrCode = async () => {
+    if (!stats?.qrCodeUrl) {
+      toast({
+        title: "Error",
+        description: "No QR code available to share",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await Share.share({
+        message: `Join AdsMoney using my referral link!\n\n${stats.referralLink}`,
+        url: stats.qrCodeUrl, // Share QR image if available
+        title: "My Referral QR Code",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to share QR code",
+        variant: "destructive",
+      });
+    }
+  };
+
   const copyToClipboard = async (text: string, type: string) => {
     await Clipboard.setStringAsync(text);
     toast({
@@ -153,7 +183,7 @@ export default function ReferralsScreen() {
           <Text style={themedStyles.title}>Earn Money By Refer</Text>
           <TouchableOpacity
             style={themedStyles.referButton}
-            onPress={handleShare}
+            onPress={handleShareQrCode}
           >
             <Text style={themedStyles.referButtonText}>Refer</Text>
           </TouchableOpacity>
@@ -162,9 +192,20 @@ export default function ReferralsScreen() {
 
       <View style={themedStyles.referSection}>
         <View style={themedStyles.referCard}>
-          <View style={themedStyles.referIllustration}>
-            <Gift color={colors.primary} size={48} />
+          <View style={themedStyles.QrCode}>
+            {stats?.qrCodeUrl ? (
+              <Image
+                source={{ uri: stats.qrCodeUrl }}
+                style={{ width: 180, height: 180 }}
+                resizeMode="contain"
+              />
+            ) : stats?.referralLink ? (
+              <QRCode value={stats.referralLink} size={180} />
+            ) : (
+              <Text>No referral link available</Text>
+            )}
           </View>
+
           <Text style={themedStyles.referTitle}>Refer a friend</Text>
           <Text style={themedStyles.referSubtitle}>
             Share your referral code and earn 10 coins for each successful
@@ -182,7 +223,7 @@ export default function ReferralsScreen() {
                 }
                 style={themedStyles.copyButton}
               >
-                <Copy color={colors.primary} size={18} />
+                <Copy color={colors.textPrimary} size={18} />
               </TouchableOpacity>
             </View>
           </View>
@@ -195,12 +236,12 @@ export default function ReferralsScreen() {
             <View key={index} style={themedStyles.friendItem}>
               <View style={themedStyles.friendAvatar}>
                 <Text style={themedStyles.friendInitial}>
-                  {referral.referredUserName.charAt(0).toUpperCase()}
+                  {referral.referredUser?.name?.charAt(0).toUpperCase() || "?"}
                 </Text>
               </View>
               <View style={themedStyles.friendInfo}>
                 <Text style={themedStyles.friendName}>
-                  {referral.referredUserName}
+                  {referral.referredUser?.name || "Unknown"}
                 </Text>
                 <Text style={themedStyles.friendDate}>
                   {new Date(referral.referredAt).toLocaleDateString("en-US", {
@@ -275,6 +316,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
     },
     referSection: {
       paddingHorizontal: 20,
+      paddingVertical: -10,
       marginTop: 20,
     },
     referCard: {
@@ -287,6 +329,24 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       shadowOpacity: 0.1,
       shadowRadius: 12,
       elevation: 8,
+      width: "100%",
+    },
+
+    QrCode: {
+      width: 200,
+      height: 200,
+      borderColor: colors.primary,
+      borderWidth: 2,
+      borderRadius: 16,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.background,
+      shadowOpacity: 0.15,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 8,
+      elevation: 6,
+      marginBottom: 20,
     },
     referIllustration: {
       width: 80,
@@ -328,10 +388,10 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       alignItems: "center",
       backgroundColor: colors.cardBackground,
       paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderRadius: 12,
+      paddingVertical: 10,
+      borderRadius: 30,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.primary,
       gap: 12,
     },
     referralCode: {
@@ -343,7 +403,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
     },
     copyButton: {
       padding: 8,
-      backgroundColor: colors.textPrimary,
+      backgroundColor: colors.primary,
       borderRadius: 8,
     },
     friendsList: {

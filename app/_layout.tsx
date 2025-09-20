@@ -69,6 +69,7 @@ export default function RootLayout() {
         </Stack>
         {/* AppContent is rendered on top of the Stack to handle initial loading and redirects */}
         <AppContent />
+        <StatusBar style="auto" />
         <Toast />
       </ThemeProvider>
     </SafeAreaProvider>
