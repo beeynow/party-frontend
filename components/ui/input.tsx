@@ -1,31 +1,50 @@
-"use client"
+"use client";
 
-import { View, TextInput, StyleSheet, type TextInputProps, type TextStyle, type ViewStyle } from "react-native"
-import { Label } from "./label"
-import { useTheme } from "@/components/theme-context" // Import useTheme
-import type { ThemeContextType } from "@/components/theme-context" // Declare ThemeContextType
+import {
+  View,
+  TextInput,
+  StyleSheet,
+  type TextInputProps,
+  type TextStyle,
+  type ViewStyle,
+} from "react-native";
+import { Label } from "./label";
+import { useTheme } from "@/components/theme-context"; // Import useTheme
+import type { ThemeContextType } from "@/components/theme-context"; // Declare ThemeContextType
 
 interface InputProps extends TextInputProps {
-  label?: string
-  labelStyle?: TextStyle
-  containerStyle?: ViewStyle
-  inputStyle?: TextStyle
+  label?: string;
+  labelStyle?: TextStyle;
+  containerStyle?: ViewStyle;
+  inputStyle?: TextStyle;
 }
 
-export function Input({ label, labelStyle, containerStyle, inputStyle, ...rest }: InputProps) {
-  const { colors } = useTheme()
-  const themedStyles = getThemedStyles(colors)
+export function Input({
+  label,
+  labelStyle,
+  containerStyle,
+  inputStyle,
+  ...rest
+}: InputProps) {
+  const { colors } = useTheme();
+  const themedStyles = getThemedStyles(colors);
 
   return (
     <View style={[themedStyles.inputContainer, containerStyle]}>
-      {label && <Label style={[themedStyles.label, ...(labelStyle ? [labelStyle] : [])]}>{label}</Label>}
+      {label && (
+        <Label
+          style={[themedStyles.label, ...(labelStyle ? [labelStyle] : [])]}
+        >
+          {label}
+        </Label>
+      )}
       <TextInput
         style={[themedStyles.input, inputStyle]}
         placeholderTextColor={colors.textSecondary} // Set placeholder color based on theme
         {...rest}
       />
     </View>
-  )
+  );
 }
 
 const getThemedStyles = (colors: ThemeContextType["colors"]) =>
@@ -47,4 +66,4 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       fontSize: 16,
       color: colors.textPrimary,
     },
-  })
+  });

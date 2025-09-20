@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Share,
   TouchableOpacity,
+  Image,
 } from "react-native";
 import { getReferralStats } from "@/lib/api";
 import { useTheme } from "@/components/theme-context";
@@ -49,7 +50,15 @@ export default function ReferralsScreen() {
     try {
       const result = await getReferralStats();
       if (result.success && result.data) {
-        setStats(result.data);
+        const mappedStats: ReferralStats = {
+          referralCode: result.data.user?.referralCode || "",
+          totalReferrals: result.data.totals?.referralCount || 0,
+          totalCoinsEarned: result.data.totals?.totalCoins || 0,
+          referralHistory: result.data.history?.referralHistory || [],
+          referralLink: result.data.sharing?.referralLink || "",
+        };
+
+        setStats(mappedStats);
       } else {
         toast({
           title: "Error",
@@ -95,6 +104,23 @@ export default function ReferralsScreen() {
       });
     }
   };
+
+  function ReferralQRCode({ qrCodeUrl }: { qrCodeUrl: string }) {
+    if (!qrCodeUrl) {
+      return <Text>No QR code available</Text>;
+    }
+
+    return (
+      <View style={{ alignItems: "center", marginTop: 20 }}>
+        <Image
+          source={{ uri: qrCodeUrl }}
+          style={{ width: 200, height: 200 }}
+          resizeMode="contain"
+        />
+        <Text style={{ marginTop: 10 }}>Scan this QR to join with my code</Text>
+      </View>
+    );
+  }
 
   const copyToClipboard = async (text: string, type: string) => {
     await Clipboard.setStringAsync(text);

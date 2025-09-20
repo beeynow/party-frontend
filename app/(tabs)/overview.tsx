@@ -7,13 +7,20 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
+  Image,
 } from "react-native";
-import { getDashboardData, getTotalUserCount } from "@/lib/api";
+import { getDashboardData, getTotalUserCount, getPosts } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
 import { useToast } from "@/components/ui/use-toast";
-import { Coins, Users, Gift, UserCheck } from "lucide-react-native";
+import {
+  Coins,
+  Users,
+  Gift,
+  UserCheck,
+  Image as ImageIcon,
+} from "lucide-react-native";
 
 interface UserData {
   id: string;
@@ -31,11 +38,24 @@ interface UserData {
   }>;
 }
 
+interface Post {
+  _id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  createdAt: string;
+  uploadedBy: {
+    name: string;
+    email: string;
+  };
+}
+
 export default function OverviewScreen() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [ActiveUsers, setActiveUsers] = useState<number>(0);
   const [verifiededUsers, setVerifiedUsers] = useState<number>(0);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { colors } = useTheme();
@@ -51,11 +71,13 @@ export default function OverviewScreen() {
         userCountResult,
         userActiveResult,
         userVerifiedResult,
+        postsResult,
       ] = await Promise.all([
         getDashboardData(),
         getTotalUserCount(),
         getTotalUserCount(),
         getTotalUserCount(),
+        getPosts(1, 5),
       ]);
 
       if (dashboardResult.success && dashboardResult.user) {
@@ -77,6 +99,10 @@ export default function OverviewScreen() {
       }
       if (userVerifiedResult.success) {
         setVerifiedUsers(userVerifiedResult.verifiedUsers || 0);
+      }
+
+      if (postsResult.success && postsResult.data) {
+        setPosts(postsResult.data.images || postsResult.data || []);
       }
     } catch (error: any) {
       toast({
@@ -173,6 +199,46 @@ export default function OverviewScreen() {
           </CardContent>
         </Card>
       </View>
+
+      {posts.length > 0 && (
+        <Card style={themedStyles.card}>
+          <CardHeader>
+            <CardTitle style={themedStyles.cardTitle}>
+              <ImageIcon color={colors.primary} size={20} />
+              Recent Posts
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={themedStyles.postsContainer}>
+                {posts.map((post) => (
+                  <View key={post._id} style={themedStyles.postCard}>
+                    <Image
+                      source={{ uri: post.imageUrl }}
+                      style={themedStyles.postImage}
+                      resizeMode="cover"
+                    />
+                    <View style={themedStyles.postContent}>
+                      <Text style={themedStyles.postTitle} numberOfLines={2}>
+                        {post.title}
+                      </Text>
+                      <Text
+                        style={themedStyles.postDescription}
+                        numberOfLines={2}
+                      >
+                        {post.description}
+                      </Text>
+                      <Text style={themedStyles.postDate}>
+                        {new Date(post.createdAt).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </CardContent>
+        </Card>
+      )}
 
       <Card style={themedStyles.card}>
         <CardHeader>
@@ -341,5 +407,42 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       fontSize: 16,
       fontWeight: "bold",
       color: colors.primary,
+    },
+    postsContainer: {
+      flexDirection: "row",
+      gap: 16,
+      paddingRight: 20,
+    },
+    postCard: {
+      width: 200,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
+    },
+    postImage: {
+      width: "100%",
+      height: 120,
+    },
+    postContent: {
+      padding: 12,
+    },
+    postTitle: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.textPrimary,
+      marginBottom: 4,
+    },
+    postDescription: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginBottom: 8,
+      lineHeight: 16,
+    },
+    postDate: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      fontWeight: "500",
     },
   });

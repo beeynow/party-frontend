@@ -17,14 +17,18 @@ import { useToast } from "@/components/ui/use-toast";
 import {
   Trophy,
   Medal,
+  CircleCheckBig,
   Crown,
   Users,
   Settings,
   BarChart3,
   UserCheck,
   Shield,
+  Upload,
+  ShieldCheck,
 } from "lucide-react-native";
 import { getUserData } from "@/lib/auth-storage";
+import AdminUploadScreen from "../../components/AdminUploadScreen"; // Assuming AdminUploadScreen is imported correctly
 
 interface LeaderboardEntry {
   rank: number;
@@ -34,11 +38,17 @@ interface LeaderboardEntry {
   totalCoins: number;
 }
 
-interface AdminStats {
+type AdminStats = {
   totalUsers: number;
   verifiedUsers: number;
   activeUsers: number;
-}
+  verificationRate: number;
+  registrations: {
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+  };
+};
 
 export default function LeaderboardScreen() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -49,8 +59,16 @@ export default function LeaderboardScreen() {
     totalUsers: 0,
     verifiedUsers: 0,
     activeUsers: 0,
+    verificationRate: 0,
+    registrations: {
+      today: 0,
+      thisWeek: 0,
+      thisMonth: 0,
+    },
   });
+
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showUploadScreen, setShowUploadScreen] = useState(false); // Added navigation state for admin screens
   const { colors } = useTheme();
   const { toast } = useToast();
 
@@ -91,6 +109,13 @@ export default function LeaderboardScreen() {
           totalUsers: result.totalUsers || 0,
           verifiedUsers: result.verifiedUsers || 0,
           activeUsers: result.activeUsers || 0,
+          verificationRate: Number(result.verificationRate) || 0, // in case it's a string like "66.67"
+          registrations: result.registration || {
+            // match the state shape
+            today: 0,
+            thisWeek: 0,
+            thisMonth: 0,
+          },
         });
       }
     } catch (error) {
@@ -301,7 +326,7 @@ export default function LeaderboardScreen() {
 
           <Card style={themedStyles.adminStatCard}>
             <CardContent style={themedStyles.adminStatContent}>
-              <UserCheck color="#10B981" size={24} />
+              <CircleCheckBig color="#10B981" size={24} />
               <Text
                 style={[themedStyles.adminStatNumber, { color: "#10B981" }]}
               >
@@ -322,12 +347,70 @@ export default function LeaderboardScreen() {
               <Text style={themedStyles.adminStatLabel}>Active Users</Text>
             </CardContent>
           </Card>
+
+          <Card style={themedStyles.adminStatCard}>
+            <CardContent style={themedStyles.adminStatContent}>
+              <ShieldCheck color="#e708c2ff" size={24} />
+              <Text
+                style={[themedStyles.adminStatNumber, { color: "#e708c2ff" }]}
+              >
+                {adminStats.verificationRate}%
+              </Text>
+              <Text style={themedStyles.adminStatLabel}>Verified Rate</Text>
+            </CardContent>
+          </Card>
+
+          <Card style={themedStyles.adminStatCard}>
+            <CardContent style={themedStyles.adminStatContent}>
+              <UserCheck color="#f50b1fff" size={24} />
+              <Text
+                style={[themedStyles.adminStatNumber, { color: "#f50b1fff" }]}
+              >
+                {adminStats.registrations.today}
+              </Text>
+              <Text style={themedStyles.adminStatLabel}>registered Today</Text>
+            </CardContent>
+          </Card>
+
+          <Card style={themedStyles.adminStatCard}>
+            <CardContent style={themedStyles.adminStatContent}>
+              <UserCheck color="#f50b1fff" size={24} />
+              <Text
+                style={[themedStyles.adminStatNumber, { color: "#f50b1fff" }]}
+              >
+                {adminStats.registrations.thisMonth}
+              </Text>
+              <Text style={themedStyles.adminStatLabel}>This Month</Text>
+            </CardContent>
+          </Card>
+
+          <Card style={themedStyles.adminStatCard}>
+            <CardContent style={themedStyles.adminStatContent}>
+              <UserCheck color="#f50b1fff" size={24} />
+              <Text
+                style={[themedStyles.adminStatNumber, { color: "#f50b1fff" }]}
+              >
+                {adminStats.registrations.thisWeek}
+              </Text>
+              <Text style={themedStyles.adminStatLabel}>This Week</Text>
+            </CardContent>
+          </Card>
         </View>
 
         <View style={themedStyles.adminActionsContainer}>
           <TouchableOpacity style={themedStyles.adminActionButton}>
             <Settings color={colors.textPrimary} size={20} />
             <Text style={themedStyles.adminActionText}>System Settings</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={themedStyles.adminActionButton}
+            onPress={() => setShowUploadScreen(!showUploadScreen)}
+          >
+            <Upload color={colors.textPrimary} size={20} />
+            <Text style={themedStyles.adminActionText}>
+              {showUploadScreen ? "Hide Upload" : "Upload Post"}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -340,6 +423,12 @@ export default function LeaderboardScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {showUploadScreen && (
+          <View style={themedStyles.adminUploadSection}>
+            <AdminUploadScreen />
+          </View>
+        )}
 
         {showLeaderboard && (
           <View style={themedStyles.adminLeaderboardSection}>
@@ -681,5 +770,11 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       fontSize: 14,
       color: colors.textSecondary,
       fontWeight: "500",
+    },
+    adminUploadSection: {
+      marginTop: 24,
+      paddingTop: 24,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
     },
   });

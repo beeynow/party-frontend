@@ -3,6 +3,9 @@ const BACKEND_BASE_URL =
 const REFERRAL_BASE_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL?.replace("/api/auth", "/api/referral") ||
   "http://localhost:3000/api/referral";
+const IMAGES_BASE_URL =
+  process.env.EXPO_PUBLIC_BACKEND_URL?.replace("/api/auth", "/api/images") ||
+  "http://localhost:3000/api/images";
 
 import {
   getAuthToken,
@@ -202,6 +205,7 @@ export async function getDashboardData() {
     });
 
     const result = await handleApiResponse(response);
+    console.log("dashboard data: ", result);
 
     if (result.user) {
       const existingUserData = await getUserData();
@@ -281,6 +285,7 @@ export async function getReferralStats() {
     });
 
     const result = await handleApiResponse(response);
+    console.log("referral details: ", result);
 
     return {
       success: true,
@@ -332,6 +337,7 @@ export async function getReferralHistory(page = 1, limit = 10) {
       message:
         error.message ||
         "Network error. Please check your connection and try again.",
+      data: [], // Added empty data array for fallback
     };
   }
 }
@@ -394,12 +400,20 @@ export async function getTotalUserCount() {
     });
 
     const result = await handleApiResponse(response);
+    console.log("data: ", result);
+    console.log("data2: ", result?.data?.users?.active);
+    console.log("data2: ", result?.data?.users?.total);
+    console.log("data2: ", result?.data?.users?.verified);
+    console.log("data2: ", result?.data?.registrations?.today);
+    console.log("data2: ", result?.data?.users?.verificationRate);
 
     return {
       success: true,
-      totalUsers: result.data?.totalUsers || 0,
-      verifiedUsers: result.data?.verifiedUsers || 0,
-      activeUsers: result.data?.activeUsers || 0,
+      totalUsers: result.data?.users?.total || 0,
+      verifiedUsers: result.data?.users?.verified || 0,
+      activeUsers: result.data?.users?.active || 0,
+      verificationRate: result.data?.users?.verificationRate || 0,
+      registration: result.data?.registrations || 0,
     };
   } catch (error: any) {
     console.error("Error getting user count:", error);
@@ -409,6 +423,129 @@ export async function getTotalUserCount() {
         error.message ||
         "Network error. Please check your connection and try again.",
       totalUsers: 0, // Fallback value
+    };
+  }
+}
+
+// Image/Post related API Functions
+export async function uploadPost(data: {
+  title: string;
+  description: string;
+  images: Array<{
+    uri: string;
+    name: string;
+    type: string;
+  }>;
+}) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const formData = new FormData();
+    formData.append("title", data.title);
+    formData.append("description", data.description);
+
+    // Add images to form data
+    data.images.forEach((image, index) => {
+      formData.append("images", {
+        uri: image.uri,
+        name: image.name,
+        type: image.type,
+      } as any);
+    });
+
+    const response = await fetch(`${IMAGES_BASE_URL}/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "multipart/form-data",
+      },
+      body: formData,
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Upload Error:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to upload post. Please try again.",
+    };
+  }
+}
+
+export async function getPosts(page = 1, limit = 10) {
+  try {
+    const response = await fetch(
+      `${IMAGES_BASE_URL}?page=${page}&limit=${limit}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting posts:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load posts. Please try again.",
+      data: [],
+    };
+  }
+}
+
+export async function getAdminPosts(page = 1, limit = 20) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(
+      `${IMAGES_BASE_URL}/admin?page=${page}&limit=${limit}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting admin posts:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load posts. Please try again.",
+      data: [],
     };
   }
 }
