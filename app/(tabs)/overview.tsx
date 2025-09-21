@@ -25,8 +25,16 @@ import {
   Bookmark,
   Plus,
   Eye,
+  CircleCheckBig,
+  ShieldCheck,
+  ExternalLink,
 } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  clearPostsCache,
+  getPostsCache,
+  savePostsCache,
+} from "@/lib/auth-storage";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -100,9 +108,54 @@ export default function OverviewScreen() {
   };
 
   const fetchPosts = async (pageNum = 1, isRefresh = false) => {
+    // 🚀 INSTANT: Load from cache first (only for initial load)
+    if (pageNum === 1 && !isRefresh && posts.length === 0) {
+      try {
+        console.log("🔍 Checking cache for instant load...");
+        const cachedPosts = await getPostsCache();
+
+        if (cachedPosts?.posts && cachedPosts.posts.length > 0) {
+          console.log(
+            "⚡ Found cached posts, loading instantly:",
+            cachedPosts.posts.length
+          );
+
+          // Transform cached data to match expected format
+          const transformedPosts = cachedPosts.posts.map((image: any) => ({
+            _id: image._id,
+            createdBy: {
+              _id: image.createdBy?._id || image.createdBy,
+              name: image.createdByName || image.createdBy?.name || "Anonymous",
+              email: image.createdByEmail || image.createdBy?.email || "",
+              referralCode: image.createdBy?.referralCode || "",
+            },
+            content: image.content || "",
+            url: image.url,
+            thumbnailUrl: image.thumbnailUrl || image.url,
+            createdAt: image.createdAt,
+            likeCount: image.likeCount || 0,
+            commentCount: image.commentCount || 0,
+            views: image.views || 0,
+            isLikedByUser: image.isLikedByUser || false,
+            category: image.category || "general",
+            tags: image.tags || [],
+          }));
+
+          setPosts(transformedPosts);
+          setLoading(false); // Stop loading spinner immediately
+          console.log("✅ Posts loaded from cache instantly");
+        } else {
+          console.log("📭 No cached posts found, will load from API");
+        }
+      } catch (error) {
+        console.log("❌ Cache load failed:", error);
+      }
+    }
+
     if (pageNum > 1) setLoadingMore(true);
 
     try {
+      console.log(`📡 Fetching posts from API - page ${pageNum}`);
       const postsResult = await getPosts(pageNum, 10);
 
       if (postsResult.success && postsResult.data?.images) {
@@ -128,11 +181,17 @@ export default function OverviewScreen() {
 
         if (isRefresh || pageNum === 1) {
           setPosts(newPosts);
+          // 🔥 CACHE: Save fresh data for next instant load
+          if (pageNum === 1) {
+            console.log("💾 Caching fresh posts for next time");
+            await savePostsCache(newPosts, pageNum);
+          }
         } else {
           setPosts((prevPosts) => [...prevPosts, ...newPosts]);
         }
 
         setHasMore(postsResult.data.pagination?.hasMore || false);
+        console.log(`✅ API posts loaded - page ${pageNum}`);
       } else {
         if (pageNum === 1) {
           setPosts([]);
@@ -145,6 +204,7 @@ export default function OverviewScreen() {
         }
       }
     } catch (error: any) {
+      console.error("❌ API Error:", error.message);
       toast({
         title: "Error",
         description: error.message || "Failed to load posts",
@@ -152,21 +212,34 @@ export default function OverviewScreen() {
       });
     } finally {
       if (pageNum > 1) setLoadingMore(false);
+      setLoading(false); // Ensure loading is stopped
     }
   };
 
   useEffect(() => {
     const loadData = async () => {
-      await fetchDashboardData();
-      await fetchPosts(1);
+      console.log("🚀 Starting app load...");
+
+      // Start both simultaneously - don't wait for one to finish
+      const dashboardPromise = fetchDashboardData();
+      const postsPromise = fetchPosts(1);
+
+      // Let them run in parallel
+      await Promise.allSettled([dashboardPromise, postsPromise]);
+
+      console.log("✅ App load complete");
     };
+
     loadData();
   }, []);
 
   const onRefresh = async () => {
     setPage(1);
-    await fetchDashboardData(true);
-    await fetchPosts(1, true);
+    // Clear cache to force fresh data
+    await clearPostsCache();
+
+    // Parallel refresh
+    await Promise.all([fetchDashboardData(true), fetchPosts(1, true)]);
   };
 
   const loadMore = async () => {
@@ -360,14 +433,19 @@ export default function OverviewScreen() {
                     {/* Post Header */}
                     <View style={themedStyles.postHeader}>
                       <View style={themedStyles.authorInfo}>
-                        <Image
-                          source={{ uri: getAvatarUrl(post.createdBy.name) }}
-                          style={themedStyles.avatar}
-                        />
-                        <View style={themedStyles.authorText}>
-                          <Text style={themedStyles.authorName}>
-                            {post.createdBy.name}
+                        <View style={themedStyles.friendAvatar}>
+                          <Text style={themedStyles.friendInitial}>
+                            {post?.createdBy?.name?.charAt(0).toUpperCase() ||
+                              "?"}
                           </Text>
+                        </View>
+                        <View style={themedStyles.authorText}>
+                          <View style={themedStyles.name}>
+                            <Text style={themedStyles.authorName}>
+                              {post.createdBy.name}
+                            </Text>
+                            <ShieldCheck color={colors.primary} size={16} />
+                          </View>
                           <View style={themedStyles.timestampContainer}>
                             <Text style={themedStyles.username}>
                               @{post.createdBy.referralCode || "user"}
@@ -451,7 +529,7 @@ export default function OverviewScreen() {
                         style={themedStyles.actionButton}
                         activeOpacity={0.7}
                       >
-                        <Share color={colors.textSecondary} size={22} />
+                        <ExternalLink color={colors.textSecondary} size={22} />
                       </TouchableOpacity>
 
                       <View style={themedStyles.viewsContainer}>
@@ -577,6 +655,24 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       alignItems: "center",
       flex: 1,
     },
+    friendAvatar: {
+      width: 40,
+      height: 40,
+      borderColor: colors.primary,
+      shadowOpacity: 0.15,
+      shadowColor: colors.primary,
+      borderWidth: 1.5,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 24,
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 7,
+    },
+    friendInitial: {
+      color: colors.textPrimary,
+      fontSize: 20,
+      fontWeight: "bold",
+    },
     avatar: {
       width: 44,
       height: 44,
@@ -587,6 +683,11 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
     },
     authorText: {
       flex: 1,
+    },
+    name: {
+      flexDirection: "row",
+      gap: 5,
+      alignItems: "center",
     },
     authorName: {
       fontSize: 16,

@@ -403,7 +403,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
     },
     friendInitial: {
       color: colors.textPrimary,
-      fontSize: 18,
+      fontSize: 45,
       fontWeight: "bold",
     },
     view: {
