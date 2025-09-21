@@ -268,6 +268,7 @@ export default function OverviewScreen() {
 
     try {
       const result = await likePost(postId);
+      console.log("🔥 Like result:", result);
 
       if (result.success) {
         // Update with server response
@@ -282,8 +283,18 @@ export default function OverviewScreen() {
               : post
           )
         );
+
+        toast({
+          title: "Success",
+          description: result.data.isLiked ? "Post liked!" : "Post unliked!",
+          variant: "success",
+        });
+      } else {
+        throw new Error(result.message || "Failed to update like");
       }
     } catch (error: any) {
+      console.error("❌ Like error:", error);
+
       // Revert optimistic update on error
       setPosts((prevPosts) =>
         prevPosts.map((post) =>
@@ -314,9 +325,12 @@ export default function OverviewScreen() {
       async (text) => {
         if (text && text.trim()) {
           try {
+            console.log("💬 Adding comment:", { postId, text: text.trim() });
             const result = await commentOnPost(postId, text.trim());
+            console.log("💬 Comment result:", result);
 
             if (result.success) {
+              // Update post with new comment count
               setPosts((prevPosts) =>
                 prevPosts.map((post) =>
                   post._id === postId
@@ -333,25 +347,87 @@ export default function OverviewScreen() {
                 description: "Comment added successfully!",
                 variant: "success",
               });
+            } else {
+              throw new Error(result.message || "Failed to add comment");
             }
           } catch (error: any) {
+            console.error("❌ Comment error:", error);
             toast({
               title: "Error",
               description: error.message || "Failed to add comment",
               variant: "destructive",
             });
           }
+        } else {
+          toast({
+            title: "Warning",
+            description: "Please enter a comment",
+            variant: "destructive",
+          });
         }
       },
-      "plain-text"
+      "plain-text",
+      "", // default text
+      "Add Comment" // OK button text
     );
   };
 
-  const handleShare = (postId: string) => {
-    toast({
-      title: "Share",
-      description: "Share feature coming soon!",
-    });
+  const handleShare = async (postId: string) => {
+    try {
+      const post = posts.find((p) => p._id === postId);
+      if (!post) return;
+
+      // Get the post URL - you'll need to adjust this based on your app's structure
+      const postUrl = `${
+        process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:3000"
+      }/posts/${postId}`;
+
+      // For React Native, you can use the Share API
+      const { Share } = require("react-native");
+
+      await Share.share({
+        message: `Check out this post: ${
+          post.content || "Amazing post!"
+        }\n\n${postUrl}`,
+        url: postUrl, // iOS only
+        title: "Share Post",
+      });
+
+      toast({
+        title: "Shared",
+        description: "Post shared successfully!",
+        variant: "success",
+      });
+    } catch (error: any) {
+      console.error("❌ Share error:", error);
+
+      // Fallback: Copy to clipboard
+      try {
+        const { Clipboard } = require("@react-native-clipboard/clipboard");
+        const post = posts.find((p) => p._id === postId);
+        const postUrl = `${
+          process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:3000"
+        }/posts/${postId}`;
+
+        await Clipboard.setString(
+          `Check out this post: ${
+            post?.content || "Amazing post!"
+          }\n\n${postUrl}`
+        );
+
+        toast({
+          title: "Copied",
+          description: "Post link copied to clipboard!",
+          variant: "success",
+        });
+      } catch (clipboardError) {
+        console.error("❌ Clipboard error:", clipboardError);
+        toast({
+          title: "Info",
+          description: "Share feature coming soon!",
+        });
+      }
+    }
   };
 
   const handleMore = (postId: string) => {
@@ -554,7 +630,7 @@ export default function OverviewScreen() {
               {!hasMore && posts.length > 0 && (
                 <View style={themedStyles.endOfPosts}>
                   <Text style={themedStyles.endOfPostsText}>
-                    You're all caught up! 🎉
+                    You are all caught up! 🎉
                   </Text>
                 </View>
               )}

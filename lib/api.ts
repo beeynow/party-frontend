@@ -13,15 +13,28 @@ import {
   saveUserData,
 } from "./auth-storage";
 
-const handleApiResponse = async (response: Response) => {
-  const result = await response.json();
+export async function handleApiResponse(response: Response) {
+  let result: any;
+
+  try {
+    const contentType = response.headers.get("content-type");
+
+    if (contentType && contentType.includes("application/json")) {
+      result = await response.json();
+    } else {
+      const text = await response.text();
+      result = { message: text || "No response body" };
+    }
+  } catch {
+    throw new Error("Invalid JSON format");
+  }
 
   if (!response.ok) {
     throw new Error(result.message || `HTTP error! status: ${response.status}`);
   }
 
   return result;
-};
+}
 
 export async function registerUser(data: {
   name: string;
@@ -722,6 +735,8 @@ export async function likePost(postId: string) {
       };
     }
 
+    console.log(`📡 Liking/unliking post: ${postId}`);
+
     const response = await fetch(`${IMAGES_BASE_URL}/${postId}/like`, {
       method: "POST",
       headers: {
@@ -731,13 +746,14 @@ export async function likePost(postId: string) {
     });
 
     const result = await handleApiResponse(response);
+    console.log("✅ Like API result:", result);
 
     return {
       success: true,
       ...result,
     };
   } catch (error: any) {
-    console.error("Error liking post:", error);
+    console.error("❌ Like post error:", error);
     return {
       success: false,
       message: error.message || "Failed to like post. Please try again.",
@@ -756,23 +772,34 @@ export async function commentOnPost(postId: string, content: string) {
       };
     }
 
+    if (!content || content.trim().length === 0) {
+      return {
+        success: false,
+        message: "Comment content is required",
+      };
+    }
+
+    console.log(`📡 Adding comment to post: ${postId}`);
+    console.log(`📝 Comment content: ${content.substring(0, 50)}...`);
+
     const response = await fetch(`${IMAGES_BASE_URL}/${postId}/comments`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content: content.trim() }),
     });
 
     const result = await handleApiResponse(response);
+    console.log("✅ Comment API result:", result);
 
     return {
       success: true,
       ...result,
     };
   } catch (error: any) {
-    console.error("Error commenting on post:", error);
+    console.error("❌ Comment post error:", error);
     return {
       success: false,
       message: error.message || "Failed to comment. Please try again.",
