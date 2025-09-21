@@ -25,6 +25,7 @@ import {
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { uploadPost } from "../lib/api";
+import { getAuthToken } from "@/lib/auth-storage";
 
 interface UploadedImage {
   uri: string;
@@ -57,6 +58,9 @@ export default function AdminUploadScreen() {
   const { colors } = useTheme();
   const { toast } = useToast();
 
+  // Fixed sections for AdminUploadScreen.tsx
+
+  // Method 1: Direct string approach (most compatible)
   const pickImages = async () => {
     try {
       const { status } =
@@ -71,7 +75,7 @@ export default function AdminUploadScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: "images", // Use string - most compatible
         allowsMultipleSelection: true,
         selectionLimit: 5,
         quality: 0.8,
@@ -107,6 +111,37 @@ export default function AdminUploadScreen() {
     }
   };
 
+  // TEST FUNCTION: Add this to your AdminUploadScreen.tsx for debugging
+  const testSimpleUpload = async () => {
+    try {
+      const token = await getAuthToken();
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/images/test-upload`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            test: "simple upload test",
+            timestamp: new Date().toISOString(),
+          }),
+        }
+      );
+
+      const result = await response.json();
+      console.log("🧪 Simple test result:", result);
+      alert(
+        `Simple test: ${result.success ? "SUCCESS" : "FAILED"} - ${
+          result.message
+        }`
+      );
+    } catch (error: any) {
+      console.error("🧪 Simple test error:", error);
+      alert("Simple test error: " + error.message);
+    }
+  };
   const takePhoto = async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -120,7 +155,7 @@ export default function AdminUploadScreen() {
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: "images", // Use string - most compatible
         quality: 0.8,
         aspect: [4, 3],
       });
@@ -154,13 +189,80 @@ export default function AdminUploadScreen() {
     }
   };
 
-  const removeImage = (index: number) => {
-    setSelectedImages(selectedImages.filter((_, i) => i !== index));
+  // Alternative Method 2: Check what's available and use fallback
+  const getMediaType = () => {
+    // Try different possible property names/values
+    if (ImagePicker.MediaTypeOptions && ImagePicker.MediaTypeOptions.Images) {
+      return ImagePicker.MediaTypeOptions.Images;
+    }
+    if (ImagePicker.MediaType && ImagePicker.MediaType.Images) {
+      return ImagePicker.MediaType.Images;
+    }
+    // Fallback to string
+    return "images";
   };
 
-  // components/AdminUploadScreen.tsx - Updated handleUpload function
+  // Alternative approach using the detection method
+  const pickImagesAlternative = async () => {
+    try {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Please grant camera roll permissions to upload images."
+        );
+        return;
+      }
+
+      const mediaType = getMediaType();
+      console.log("Using mediaType:", mediaType);
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: mediaType,
+        allowsMultipleSelection: true,
+        selectionLimit: 5,
+        quality: 0.8,
+        aspect: [4, 3],
+      });
+
+      // ... rest of the function remains the same
+    } catch (error) {
+      console.error("Error picking images:", error);
+      toast({
+        title: "Error",
+        description: "Failed to pick images",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Debug function to check what's available in ImagePicker
+  const debugImagePicker = () => {
+    console.log("ImagePicker object keys:", Object.keys(ImagePicker));
+    console.log("MediaTypeOptions:", ImagePicker.MediaTypeOptions);
+    console.log("MediaType:", (ImagePicker as any).MediaType);
+
+    // Check what properties exist
+    if (ImagePicker.MediaTypeOptions) {
+      console.log(
+        "MediaTypeOptions keys:",
+        Object.keys(ImagePicker.MediaTypeOptions)
+      );
+    }
+
+    if ((ImagePicker as any).MediaType) {
+      console.log(
+        "MediaType keys:",
+        Object.keys((ImagePicker as any).MediaType)
+      );
+    }
+  };
+
+  // 3. Fixed handleUpload function with better error handling and network testing
   const handleUpload = async () => {
-    // Fixed: Use 'content' instead of 'description'
+    // Validation
     if (!content.trim() && selectedImages.length === 0) {
       toast({
         title: "Error",
@@ -182,18 +284,46 @@ export default function AdminUploadScreen() {
     setUploading(true);
 
     try {
+      // Test network connectivity first
+      console.log("🌐 Testing network connectivity...");
+      const networkTest = await fetch(
+        `${process.env.EXPO_PUBLIC_BACKEND_URL}/health`
+      );
+      if (!networkTest.ok) {
+        throw new Error("Network connectivity test failed");
+      }
+      console.log("✅ Network test passed");
+
       // Prepare tags array from the tags string
       const tagsArray = tags
         .split(",")
         .map((tag) => tag.trim())
         .filter((tag) => tag.length > 0);
 
+      console.log("📤 Preparing upload data:", {
+        content: content.trim(),
+        category: selectedCategory,
+        tagsCount: tagsArray.length,
+        imagesCount: selectedImages.length,
+      });
+
+      // Log image details for debugging
+      selectedImages.forEach((img, index) => {
+        console.log(`📸 Image ${index + 1}:`, {
+          name: img.name,
+          type: img.type,
+          uriStart: img.uri.substring(0, 30) + "...",
+        });
+      });
+
       const result = await uploadPost({
-        content: content.trim(), // Use 'content' instead of 'description'
+        content: content.trim(),
         category: selectedCategory,
         tags: tagsArray,
         images: selectedImages,
       });
+
+      console.log("📤 Upload result:", result);
 
       if (result.success) {
         toast({
@@ -203,7 +333,7 @@ export default function AdminUploadScreen() {
         });
 
         // Reset form
-        setContent(""); // Reset 'content' not 'description'
+        setContent("");
         setSelectedImages([]);
         setSelectedCategory("general");
         setTags("");
@@ -215,15 +345,36 @@ export default function AdminUploadScreen() {
         });
       }
     } catch (error: any) {
-      console.error("Upload error:", error);
+      console.error("Upload error details:", {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
+
+      let errorMessage = "Failed to upload images";
+
+      if (error.message.includes("Network request failed")) {
+        errorMessage =
+          "Network connection failed. Check your internet connection and server status.";
+      } else if (error.message.includes("timeout")) {
+        errorMessage =
+          "Upload timed out. Please try again with fewer or smaller images.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       toast({
         title: "Error",
-        description: error.message || "Failed to upload images",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
       setUploading(false);
     }
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages(selectedImages.filter((_, i) => i !== index));
   };
 
   const themedStyles = getThemedStyles(colors);

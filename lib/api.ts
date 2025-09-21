@@ -427,6 +427,8 @@ export async function getTotalUserCount() {
 }
 
 // Image/Post related API Functions
+// EXACT FIX: Replace the uploadPost function in lib/api.ts
+
 export async function uploadPost(data: {
   content: string;
   category?: string;
@@ -447,9 +449,25 @@ export async function uploadPost(data: {
       };
     }
 
+    console.log("📤 Starting upload with data:", {
+      contentLength: data.content.length,
+      category: data.category,
+      tagsCount: data.tags?.length || 0,
+      imagesCount: data.images.length,
+    });
+
+    // Log each image before processing
+    data.images.forEach((img, idx) => {
+      console.log(`📸 Input image ${idx + 1}:`, {
+        name: img.name,
+        type: img.type,
+        uri: img.uri.substring(0, 50) + "...",
+      });
+    });
+
     const formData = new FormData();
 
-    // Add content and metadata
+    // Add text fields
     formData.append("content", data.content);
 
     if (data.category) {
@@ -460,35 +478,166 @@ export async function uploadPost(data: {
       formData.append("tags", JSON.stringify(data.tags));
     }
 
-    // Add images to form data
+    // CRITICAL FIX: Process images with proper React Native FormData format
     data.images.forEach((image, index) => {
-      formData.append("images", {
+      // Ensure proper MIME type
+      let mimeType = image.type;
+      if (!mimeType || mimeType === "image" || !mimeType.includes("/")) {
+        const filename = image.name.toLowerCase();
+        if (filename.endsWith(".png")) {
+          mimeType = "image/png";
+        } else if (filename.endsWith(".gif")) {
+          mimeType = "image/gif";
+        } else if (filename.endsWith(".webp")) {
+          mimeType = "image/webp";
+        } else {
+          mimeType = "image/jpeg";
+        }
+      }
+
+      // Create the file object in React Native format
+      const fileObj = {
         uri: image.uri,
+        type: mimeType,
         name: image.name,
-        type: image.type,
-      } as any);
+      };
+
+      console.log(`📎 Appending file ${index + 1}:`, fileObj);
+
+      // CRITICAL: This is the correct way for React Native
+      formData.append("images", fileObj as any);
     });
+
+    console.log(
+      "📤 FormData created, making request to:",
+      `${IMAGES_BASE_URL}/upload`
+    );
 
     const response = await fetch(`${IMAGES_BASE_URL}/upload`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        // Don't set Content-Type for FormData - let React Native handle it
+        // IMPORTANT: Do NOT set Content-Type header for FormData in React Native
       },
       body: formData,
     });
 
+    console.log("📤 Response status:", response.status, response.statusText);
+
     const result = await handleApiResponse(response);
+    console.log("✅ Upload result:", result.success ? "SUCCESS" : "FAILED");
 
     return {
       success: true,
       ...result,
     };
   } catch (error: any) {
-    console.error("Upload Error:", error);
+    console.error("❌ Upload Error:", error.message);
     return {
       success: false,
       message: error.message || "Failed to upload post. Please try again.",
+    };
+  }
+}
+
+// ALTERNATIVE: If the above doesn't work, try this more explicit approach
+export async function uploadPostAlternative(data: {
+  content: string;
+  category?: string;
+  tags?: string[];
+  images: Array<{
+    uri: string;
+    name: string;
+    type: string;
+  }>;
+}) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found.",
+      };
+    }
+
+    // Create FormData step by step with explicit logging
+    const formData = new FormData();
+
+    console.log("📝 Adding content field");
+    formData.append("content", data.content);
+
+    if (data.category) {
+      console.log("📝 Adding category field");
+      formData.append("category", data.category);
+    }
+
+    if (data.tags && data.tags.length > 0) {
+      console.log("📝 Adding tags field");
+      formData.append("tags", JSON.stringify(data.tags));
+    }
+
+    // Process each image individually
+    for (let i = 0; i < data.images.length; i++) {
+      const image = data.images[i];
+
+      console.log(`📸 Processing image ${i + 1}/${data.images.length}`);
+
+      // Fix MIME type if needed
+      let correctedType = image.type;
+      if (correctedType === "image" || !correctedType.includes("/")) {
+        correctedType = "image/jpeg"; // Default fallback
+        console.log("🔧 Corrected MIME type to:", correctedType);
+      }
+
+      // Create file object
+      const fileData = {
+        uri: image.uri,
+        type: correctedType,
+        name: image.name,
+      };
+
+      console.log(`📎 File object ${i + 1}:`, {
+        name: fileData.name,
+        type: fileData.type,
+        uriValid: fileData.uri.startsWith("file://"),
+      });
+
+      // Append to FormData
+      formData.append("images", fileData as any);
+      console.log(`✅ Added image ${i + 1} to FormData`);
+    }
+
+    console.log("🚀 Sending request...");
+
+    const response = await fetch(`${IMAGES_BASE_URL}/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    console.log("📡 Response:", response.status, response.ok);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ Server error:", errorText);
+      throw new Error(`Upload failed: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log("🎉 Success!");
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("💥 Error:", error.message);
+    return {
+      success: false,
+      message: error.message,
     };
   }
 }
