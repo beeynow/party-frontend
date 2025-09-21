@@ -8,6 +8,8 @@ import {
   ScrollView,
   RefreshControl,
   Image,
+  TouchableOpacity,
+  Dimensions,
 } from "react-native";
 import { getDashboardData, getTotalUserCount, getPosts } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -15,12 +17,34 @@ import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
 import { useToast } from "@/components/ui/use-toast";
 import {
-  Coins,
-  Users,
-  Gift,
-  UserCheck,
-  Image as ImageIcon,
+  Heart,
+  MessageCircle,
+  Share,
+  MoreHorizontal,
+  Bookmark,
+  Send,
+  Plus,
 } from "lucide-react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+const { width: screenWidth } = Dimensions.get("window");
+
+interface DemoPost {
+  id: string;
+  author: {
+    name: string;
+    username: string;
+    avatar: string;
+  };
+  content: string;
+  imageUrl: string;
+  timestamp: string;
+  likes: number;
+  comments: number;
+  reposts: number;
+  isLiked: boolean;
+  isBookmarked: boolean;
+}
 
 interface UserData {
   id: string;
@@ -29,33 +53,91 @@ interface UserData {
   referralCode: string;
   coins: number;
   referralCount: number;
-  referralHistory: Array<{
-    referredUser: string;
-    referredUserName: string;
-    referredUserEmail: string;
-    coinsEarned: number;
-    referredAt: string;
-  }>;
 }
 
-interface Post {
-  _id: string;
-  title: string;
-  description: string;
-  imageUrl: string;
-  createdAt: string;
-  uploadedBy: {
-    name: string;
-    email: string;
-  };
-}
+// Demo posts with online image URIs
+const demoPosts: DemoPost[] = [
+  {
+    id: "1",
+    author: {
+      name: "Alex Johnson",
+      username: "@alexj",
+      avatar:
+        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face",
+    },
+    content:
+      "Beautiful sunset from my evening walk! Nature never fails to amaze me. 🌅",
+    imageUrl:
+      "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
+    timestamp: "2h ago",
+    likes: 42,
+    comments: 8,
+    reposts: 3,
+    isLiked: false,
+    isBookmarked: true,
+  },
+  {
+    id: "2",
+    author: {
+      name: "Sarah Chen",
+      username: "@sarahc",
+      avatar:
+        "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=100&h=100&fit=crop&crop=face",
+    },
+    content:
+      "Just finished this amazing book! Highly recommend it to anyone interested in tech and innovation.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=300&fit=crop",
+    timestamp: "4h ago",
+    likes: 28,
+    comments: 12,
+    reposts: 5,
+    isLiked: true,
+    isBookmarked: false,
+  },
+  {
+    id: "3",
+    author: {
+      name: "Mike Rodriguez",
+      username: "@mikerod",
+      avatar:
+        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face",
+    },
+    content:
+      "Coffee and code - the perfect combination for a productive morning! ☕️💻",
+    imageUrl:
+      "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=400&h=300&fit=crop",
+    timestamp: "6h ago",
+    likes: 67,
+    comments: 15,
+    reposts: 8,
+    isLiked: true,
+    isBookmarked: true,
+  },
+  {
+    id: "4",
+    author: {
+      name: "Emma Wilson",
+      username: "@emmaw",
+      avatar:
+        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop&crop=face",
+    },
+    content:
+      "Exploring the city on my bike today. Found this amazing street art! 🚲🎨",
+    imageUrl:
+      "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400&h=300&fit=crop",
+    timestamp: "8h ago",
+    likes: 35,
+    comments: 6,
+    reposts: 2,
+    isLiked: false,
+    isBookmarked: false,
+  },
+];
 
 export default function OverviewScreen() {
   const [userData, setUserData] = useState<UserData | null>(null);
-  const [totalUsers, setTotalUsers] = useState<number>(0);
-  const [ActiveUsers, setActiveUsers] = useState<number>(0);
-  const [verifiededUsers, setVerifiedUsers] = useState<number>(0);
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [posts, setPosts] = useState<DemoPost[]>(demoPosts);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { colors } = useTheme();
@@ -66,19 +148,7 @@ export default function OverviewScreen() {
     else setLoading(true);
 
     try {
-      const [
-        dashboardResult,
-        userCountResult,
-        userActiveResult,
-        userVerifiedResult,
-        postsResult,
-      ] = await Promise.all([
-        getDashboardData(),
-        getTotalUserCount(),
-        getTotalUserCount(),
-        getTotalUserCount(),
-        getPosts(1, 5),
-      ]);
+      const dashboardResult = await getDashboardData();
 
       if (dashboardResult.success && dashboardResult.user) {
         setUserData(dashboardResult.user);
@@ -89,20 +159,6 @@ export default function OverviewScreen() {
             dashboardResult.message || "Failed to load dashboard data",
           variant: "destructive",
         });
-      }
-
-      if (userCountResult.success) {
-        setTotalUsers(userCountResult.totalUsers || 0);
-      }
-      if (userActiveResult.success) {
-        setActiveUsers(userActiveResult.activeUsers || 0);
-      }
-      if (userVerifiedResult.success) {
-        setVerifiedUsers(userVerifiedResult.verifiedUsers || 0);
-      }
-
-      if (postsResult.success && postsResult.data) {
-        setPosts(postsResult.data.images || postsResult.data || []);
       }
     } catch (error: any) {
       toast({
@@ -124,6 +180,51 @@ export default function OverviewScreen() {
     fetchDashboardData(true);
   };
 
+  const handleLike = (postId: string) => {
+    setPosts((prev) =>
+      prev.map((post) =>
+        post.id === postId
+          ? {
+              ...post,
+              isLiked: !post.isLiked,
+              likes: post.isLiked ? post.likes - 1 : post.likes + 1,
+            }
+          : post
+      )
+    );
+  };
+
+  const handleBookmark = (postId: string) => {
+    setPosts((prev) =>
+      prev.map((post) =>
+        post.id === postId
+          ? { ...post, isBookmarked: !post.isBookmarked }
+          : post
+      )
+    );
+  };
+
+  const handleComment = (postId: string) => {
+    toast({
+      title: "Comment",
+      description: "Comment feature coming soon!",
+    });
+  };
+
+  const handleShare = (postId: string) => {
+    toast({
+      title: "Share",
+      description: "Share feature coming soon!",
+    });
+  };
+
+  const handleMore = (postId: string) => {
+    toast({
+      title: "More Options",
+      description: "More options coming soon!",
+    });
+  };
+
   const themedStyles = getThemedStyles(colors);
 
   if (loading && !userData) {
@@ -135,161 +236,132 @@ export default function OverviewScreen() {
   }
 
   return (
-    <ScrollView
-      style={themedStyles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
+    <SafeAreaView style={themedStyles.container}>
+      {/* Header */}
       <View style={themedStyles.header}>
-        <Text style={themedStyles.welcomeText}>Welcome back,</Text>
-        <Text style={themedStyles.nameText}>{userData?.name}!</Text>
+        <View>
+          <Text style={themedStyles.welcomeText}>Welcome back,</Text>
+          <Text style={themedStyles.nameText}>{userData?.name}!</Text>
+        </View>
+        <TouchableOpacity style={themedStyles.createPostButton}>
+          <Plus color={colors.white} size={24} />
+        </TouchableOpacity>
       </View>
-
-      <View style={themedStyles.statsGrid}>
-        <Card style={themedStyles.statCard}>
-          <CardContent style={themedStyles.statContent}>
-            <View style={themedStyles.statIcon}>
-              <Coins color={colors.primary} size={24} />
-            </View>
-            <Text style={themedStyles.statValue}>{userData?.coins || 0}</Text>
-            <Text style={themedStyles.statLabel}>Total Coins</Text>
-          </CardContent>
-        </Card>
-
-        <Card style={themedStyles.statCard}>
-          <CardContent style={themedStyles.statContent}>
-            <View style={themedStyles.statIcon}>
-              <Users color={colors.primary} size={24} />
-            </View>
-            <Text style={themedStyles.statValue}>
-              {userData?.referralCount || 0}
-            </Text>
-            <Text style={themedStyles.statLabel}>Referrals</Text>
-          </CardContent>
-        </Card>
-
-        <Card style={themedStyles.statCard}>
-          <CardContent style={themedStyles.statContent}>
-            <View style={themedStyles.statIcon}>
-              <UserCheck color={colors.primary} size={24} />
-            </View>
-            <Text style={themedStyles.statValue}>{totalUsers}</Text>
-            <Text style={themedStyles.statLabel}>Total Users</Text>
-          </CardContent>
-        </Card>
-
-        <Card style={themedStyles.statCard}>
-          <CardContent style={themedStyles.statContent}>
-            <View style={themedStyles.statIcon}>
-              <UserCheck color={colors.primary} size={24} />
-            </View>
-            <Text style={themedStyles.statValue}>{ActiveUsers}</Text>
-            <Text style={themedStyles.statLabel}>Active Users</Text>
-          </CardContent>
-        </Card>
-
-        <Card style={themedStyles.statCard}>
-          <CardContent style={themedStyles.statContent}>
-            <View style={themedStyles.statIcon}>
-              <UserCheck color={colors.primary} size={24} />
-            </View>
-            <Text style={themedStyles.statValue}>{verifiededUsers}</Text>
-            <Text style={themedStyles.statLabel}>Verified Users</Text>
-          </CardContent>
-        </Card>
-      </View>
-
-      {posts.length > 0 && (
-        <Card style={themedStyles.card}>
-          <CardHeader>
-            <CardTitle style={themedStyles.cardTitle}>
-              <ImageIcon color={colors.primary} size={20} />
-              Recent Posts
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={themedStyles.postsContainer}>
-                {posts.map((post) => (
-                  <View key={post._id} style={themedStyles.postCard}>
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* Posts Feed */}
+        <View style={themedStyles.feed}>
+          {posts.map((post) => (
+            <Card key={post.id} style={themedStyles.postCard}>
+              <CardContent style={themedStyles.postContent}>
+                {/* Post Header */}
+                <View style={themedStyles.postHeader}>
+                  <View style={themedStyles.authorInfo}>
                     <Image
-                      source={{ uri: post.imageUrl }}
-                      style={themedStyles.postImage}
-                      resizeMode="cover"
+                      source={{ uri: post.author.avatar }}
+                      style={themedStyles.avatar}
                     />
-                    <View style={themedStyles.postContent}>
-                      <Text style={themedStyles.postTitle} numberOfLines={2}>
-                        {post.title}
+                    <View style={themedStyles.authorText}>
+                      <Text style={themedStyles.authorName}>
+                        {post.author.name}
                       </Text>
-                      <Text
-                        style={themedStyles.postDescription}
-                        numberOfLines={2}
-                      >
-                        {post.description}
-                      </Text>
-                      <Text style={themedStyles.postDate}>
-                        {new Date(post.createdAt).toLocaleDateString()}
-                      </Text>
+                      <View style={themedStyles.timestampContainer}>
+                        <Text style={themedStyles.username}>
+                          {post.author.username}
+                        </Text>
+                        <Text style={themedStyles.timestamp}>
+                          • {post.timestamp}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                ))}
-              </View>
-            </ScrollView>
-          </CardContent>
-        </Card>
-      )}
+                  <TouchableOpacity
+                    onPress={() => handleMore(post.id)}
+                    style={themedStyles.moreButton}
+                  >
+                    <MoreHorizontal color={colors.textSecondary} size={20} />
+                  </TouchableOpacity>
+                </View>
 
-      <Card style={themedStyles.card}>
-        <CardHeader>
-          <CardTitle style={themedStyles.cardTitle}>
-            <Gift color={colors.primary} size={20} />
-            Your Referral Code
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <View style={themedStyles.referralCodeContainer}>
-            <Text style={themedStyles.referralCode}>
-              {userData?.referralCode}
-            </Text>
-            <Text style={themedStyles.referralCodeDesc}>
-              Share this code with friends to earn 10 coins for each successful
-              referral!
-            </Text>
-          </View>
-        </CardContent>
-      </Card>
+                {/* Post Content */}
+                <Text style={themedStyles.postText}>{post.content}</Text>
 
-      {userData?.referralHistory && userData.referralHistory.length > 0 && (
-        <Card style={themedStyles.card}>
-          <CardHeader>
-            <CardTitle style={themedStyles.cardTitle}>
-              Recent Referrals
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {userData.referralHistory.slice(0, 3).map((referral, index) => (
-              <View key={index} style={themedStyles.referralItem}>
-                <View style={themedStyles.referralInfo}>
-                  <Text style={themedStyles.referralName}>
-                    {referral.referredUserName}
-                  </Text>
-                  <Text style={themedStyles.referralDate}>
-                    {new Date(referral.referredAt).toLocaleDateString()}
+                {/* Post Image */}
+                <Image
+                  source={{ uri: post.imageUrl }}
+                  style={themedStyles.postImage}
+                  resizeMode="cover"
+                />
+
+                {/* Engagement Stats */}
+                <View style={themedStyles.engagementStats}>
+                  <Text style={themedStyles.statText}>
+                    {post.likes} likes • {post.comments} comments •{" "}
+                    {post.reposts} reposts
                   </Text>
                 </View>
-                <View style={themedStyles.referralReward}>
-                  <Text style={themedStyles.rewardText}>
-                    +{referral.coinsEarned}
-                  </Text>
-                  <Coins color={colors.primary} size={16} />
+
+                {/* Action Buttons */}
+                <View style={themedStyles.actionButtons}>
+                  <TouchableOpacity
+                    onPress={() => handleLike(post.id)}
+                    style={themedStyles.actionButton}
+                  >
+                    <Heart
+                      color={post.isLiked ? colors.red : colors.textSecondary}
+                      size={22}
+                      fill={post.isLiked ? colors.red : "transparent"}
+                    />
+                    <Text
+                      style={[
+                        themedStyles.actionText,
+                        post.isLiked && { color: colors.red },
+                      ]}
+                    >
+                      {post.likes}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => handleComment(post.id)}
+                    style={themedStyles.actionButton}
+                  >
+                    <MessageCircle color={colors.textSecondary} size={22} />
+                    <Text style={themedStyles.actionText}>{post.comments}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => handleShare(post.id)}
+                    style={themedStyles.actionButton}
+                  >
+                    <Share color={colors.textSecondary} size={22} />
+                    <Text style={themedStyles.actionText}>{post.reposts}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => handleBookmark(post.id)}
+                    style={themedStyles.bookmarkButton}
+                  >
+                    <Bookmark
+                      color={
+                        post.isBookmarked
+                          ? colors.primary
+                          : colors.textSecondary
+                      }
+                      size={22}
+                      fill={post.isBookmarked ? colors.primary : "transparent"}
+                    />
+                  </TouchableOpacity>
                 </View>
-              </View>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-    </ScrollView>
+              </CardContent>
+            </Card>
+          ))}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -310,8 +382,11 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       fontSize: 16,
     },
     header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
       padding: 20,
-      paddingBottom: 0,
+      paddingBottom: 10,
     },
     welcomeText: {
       fontSize: 16,
@@ -320,129 +395,131 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
     nameText: {
       fontSize: 24,
       fontWeight: "bold",
-      color: colors.textSecondary,
+      color: colors.textPrimary,
       marginTop: 4,
     },
-    statsGrid: {
+    createPostButton: {
+      backgroundColor: colors.primary,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    quickStats: {
       flexDirection: "row",
       paddingHorizontal: 20,
-      gap: 12,
-      marginTop: 20,
-      flexWrap: "wrap",
+      paddingVertical: 10,
+      marginBottom: 10,
     },
-    statCard: {
-      flexBasis: "30%",
-      minWidth: 100,
-    },
-    statContent: {
+    statItem: {
+      flex: 1,
       alignItems: "center",
-      paddingVertical: 16,
     },
-    statIcon: {
-      marginBottom: 8,
-    },
-    statValue: {
-      fontSize: 24,
+    statNumber: {
+      fontSize: 20,
       fontWeight: "bold",
-      color: colors.textSecondary,
+      color: colors.textPrimary,
     },
     statLabel: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      marginTop: 4,
-    },
-    card: {
-      margin: 20,
-      marginTop: 12,
-    },
-    cardTitle: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-    },
-    referralCodeContainer: {
-      alignItems: "center",
-      paddingVertical: 16,
-    },
-    referralCode: {
-      fontSize: 28,
-      fontWeight: "bold",
-      color: colors.primary,
-      letterSpacing: 2,
-      marginBottom: 8,
-    },
-    referralCodeDesc: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      textAlign: "center",
-      lineHeight: 20,
-    },
-    referralItem: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    referralInfo: {
-      flex: 1,
-    },
-    referralName: {
-      fontSize: 16,
-      fontWeight: "600",
-      color: colors.textSecondary,
-    },
-    referralDate: {
-      fontSize: 14,
+      fontSize: 12,
       color: colors.textSecondary,
       marginTop: 2,
     },
-    referralReward: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-    },
-    rewardText: {
-      fontSize: 16,
-      fontWeight: "bold",
-      color: colors.primary,
-    },
-    postsContainer: {
-      flexDirection: "row",
-      gap: 16,
-      paddingRight: 20,
+    feed: {
+      paddingHorizontal: 16,
     },
     postCard: {
-      width: 200,
+      marginBottom: 16,
       backgroundColor: colors.cardBackground,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: "hidden",
+    },
+    postContent: {
+      padding: 16,
+    },
+    postHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 12,
+    },
+    authorInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+    },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      marginRight: 12,
+    },
+    authorText: {
+      flex: 1,
+    },
+    authorName: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    timestampContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 2,
+    },
+    username: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    timestamp: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginLeft: 4,
+    },
+    moreButton: {
+      padding: 8,
+    },
+    postText: {
+      fontSize: 16,
+      color: colors.textPrimary,
+      lineHeight: 22,
+      marginBottom: 12,
     },
     postImage: {
       width: "100%",
-      height: 120,
+      height: 200,
+      borderRadius: 12,
+      marginBottom: 12,
     },
-    postContent: {
-      padding: 12,
+    engagementStats: {
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      marginBottom: 12,
     },
-    postTitle: {
+    statText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    actionButtons: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    actionButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      flex: 1,
+    },
+    bookmarkButton: {
+      padding: 8,
+      marginLeft: 12,
+    },
+    actionText: {
       fontSize: 14,
-      fontWeight: "600",
-      color: colors.textPrimary,
-      marginBottom: 4,
-    },
-    postDescription: {
-      fontSize: 12,
       color: colors.textSecondary,
-      marginBottom: 8,
-      lineHeight: 16,
-    },
-    postDate: {
-      fontSize: 11,
-      color: colors.textSecondary,
+      marginLeft: 6,
       fontWeight: "500",
     },
   });

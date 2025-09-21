@@ -129,7 +129,7 @@ export default function RegisterPage() {
       <Card style={themedStyles.card}>
         <CardHeader style={themedStyles.cardHeader}>
           <CardTitle style={themedStyles.title}>
-            Register for AdsMoney
+            Register for Party-Support
           </CardTitle>
           <CardDescription style={themedStyles.description}>
             Enter your details to create an account

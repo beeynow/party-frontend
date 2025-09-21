@@ -8,6 +8,8 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Dimensions,
+  Image,
 } from "react-native";
 import { getReferralLeaderboard, getTotalUserCount } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,9 +28,14 @@ import {
   Shield,
   Upload,
   ShieldCheck,
+  Zap,
+  TrendingUp,
+  Star,
 } from "lucide-react-native";
 import { getUserData } from "@/lib/auth-storage";
-import AdminUploadScreen from "../../components/AdminUploadScreen"; // Assuming AdminUploadScreen is imported correctly
+import AdminUploadScreen from "../../components/AdminUploadScreen";
+
+const { width: screenWidth } = Dimensions.get("window");
 
 interface LeaderboardEntry {
   rank: number;
@@ -55,6 +62,9 @@ export default function LeaderboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [activeTab, setActiveTab] = useState<
+    "leaderboard" | "dashboard" | "upload"
+  >("leaderboard");
   const [adminStats, setAdminStats] = useState<AdminStats>({
     totalUsers: 0,
     verifiedUsers: 0,
@@ -67,8 +77,6 @@ export default function LeaderboardScreen() {
     },
   });
 
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [showUploadScreen, setShowUploadScreen] = useState(false); // Added navigation state for admin screens
   const { colors } = useTheme();
   const { toast } = useToast();
 
@@ -76,20 +84,15 @@ export default function LeaderboardScreen() {
     const loadUserAndData = async () => {
       try {
         const userData = await getUserData();
-
-        console.log("[v0] User data loaded:", userData);
         const adminStatus =
           userData?.is_admin === true && userData?.adminConfirmed === true;
         setIsAdmin(adminStatus);
-        console.log("[v0] Admin status:", adminStatus);
 
         await fetchLeaderboard();
-
         if (adminStatus) {
           await fetchAdminStats();
         }
       } catch (error) {
-        console.log("[v0] Error loading user data:", error);
         setIsAdmin(false);
       } finally {
         setLoading(false);
@@ -102,16 +105,13 @@ export default function LeaderboardScreen() {
   const fetchAdminStats = async () => {
     try {
       const result = await getTotalUserCount();
-      console.log("[v0] Admin stats result:", result);
-
       if (result.success) {
         setAdminStats({
           totalUsers: result.totalUsers || 0,
           verifiedUsers: result.verifiedUsers || 0,
           activeUsers: result.activeUsers || 0,
-          verificationRate: Number(result.verificationRate) || 0, // in case it's a string like "66.67"
+          verificationRate: Number(result.verificationRate) || 0,
           registrations: result.registration || {
-            // match the state shape
             today: 0,
             thisWeek: 0,
             thisMonth: 0,
@@ -119,7 +119,6 @@ export default function LeaderboardScreen() {
         });
       }
     } catch (error) {
-      console.log("[v0] Failed to fetch admin stats:", error);
       toast({
         title: "Error",
         description: "Failed to load admin statistics",
@@ -133,7 +132,6 @@ export default function LeaderboardScreen() {
 
     try {
       const result = await getReferralLeaderboard(20);
-      console.log("[v0] Leaderboard result:", result);
 
       if (result.success && result.data) {
         const leaderboardData = result.data.leaderboard || result.data;
@@ -160,7 +158,6 @@ export default function LeaderboardScreen() {
         });
       }
     } catch (error: any) {
-      console.log("[v0] Leaderboard fetch error:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to load leaderboard",
@@ -178,334 +175,346 @@ export default function LeaderboardScreen() {
     }
   };
 
-  const renderAvatar = (name: string, rank: number) => {
-    const getRankColor = (rank: number) => {
-      if (rank <= 3) return colors.primary;
-      return colors.textSecondary;
-    };
-
-    return (
-      <View style={[themedStyles.avatar, { borderColor: getRankColor(rank) }]}>
-        <Text style={themedStyles.avatarText}>{rank}</Text>
-        {rank === 1 && (
-          <View style={themedStyles.crownContainer}>
-            <Crown color={colors.textPrimary} size={14} />
-          </View>
-        )}
-      </View>
-    );
-  };
-
-  const getRankIcon = (rank: number) => {
-    switch (rank) {
-      case 1:
-        return <Crown color={colors.primary} size={18} />;
-      case 2:
-        return <Medal color="#C0C0C0" size={18} />;
-      case 3:
-        return <Medal color="#CD7F32" size={18} />;
-      default:
-        return (
-          <View
-            style={[
-              themedStyles.rankBadge,
-              {
-                backgroundColor: rank <= 10 ? "#8B5CF6" : colors.textSecondary,
-              },
-            ]}
-          >
-            <Text style={themedStyles.rankBadgeText}>{rank}</Text>
-          </View>
-        );
+  const getRankBadge = (rank: number) => {
+    if (rank === 1) {
+      return (
+        <View style={[themedStyles.rankBadge, themedStyles.goldBadge]}>
+          <Crown color="#FFD700" size={16} />
+        </View>
+      );
+    } else if (rank === 2) {
+      return (
+        <View style={[themedStyles.rankBadge, themedStyles.silverBadge]}>
+          <Medal color="#C0C0C0" size={16} />
+        </View>
+      );
+    } else if (rank === 3) {
+      return (
+        <View style={[themedStyles.rankBadge, themedStyles.bronzeBadge]}>
+          <Medal color="#CD7F32" size={16} />
+        </View>
+      );
+    } else {
+      return (
+        <View style={[themedStyles.rankBadge, themedStyles.defaultBadge]}>
+          <Text style={themedStyles.rankText}>{rank}</Text>
+        </View>
+      );
     }
   };
 
-  const renderLeaderboardRows = () => {
-    if (leaderboard.length === 0) return null;
+  const getAvatarUrl = (name: string) => {
+    // Generate consistent avatar based on name
+    const seed = name
+      .split("")
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const avatarIndex = seed % 100;
+    return `https://images.unsplash.com/photo-${
+      1500000000000 + avatarIndex
+    }?w=50&h=50&fit=crop&crop=face`;
+  };
 
-    return (
-      <View style={themedStyles.leaderboardContainer}>
-        {leaderboard.map((entry) => {
-          const isTopTen = entry.rank <= 10;
-          const isTopThree = entry.rank <= 3;
+  const renderLeaderboard = () => (
+    <View style={themedStyles.leaderboardContainer}>
+      <View style={themedStyles.pageHeader}>
+        <View style={themedStyles.headerIcon}>
+          <Trophy color={colors.primary} size={28} />
+        </View>
+        <Text style={themedStyles.pageTitle}>Leaderboard</Text>
+        <Text style={themedStyles.pageSubtitle}>Top performers this month</Text>
+      </View>
 
-          const cardStyle = [themedStyles.modernCard];
-
-          if (isTopThree) {
-            //@ts-ignore
-            cardStyle.push(themedStyles.topThreeCard);
-          } else if (isTopTen) {
-            //@ts-ignore
-            cardStyle.push(themedStyles.topTenCard);
-          }
-
-          return (
+      {leaderboard.length > 0 ? (
+        <View style={themedStyles.leaderboardList}>
+          {leaderboard.slice(0, 3).map((entry) => (
             <Card
               key={entry.rank}
               //@ts-ignore
-              style={cardStyle}
+              style={[
+                themedStyles.podiumCard,
+                entry.rank === 1 && themedStyles.firstPlaceCard,
+              ]}
             >
-              <CardContent style={themedStyles.cardContent}>
-                <View style={themedStyles.leftSection}>
-                  <View
-                    //@ts-ignore
-                    style={themedStyles.rankContainer}
-                  >
-                    {getRankIcon(entry.rank)}
-                  </View>
-                  {renderAvatar(entry.name, entry.rank)}
+              <CardContent style={themedStyles.podiumContent}>
+                <View style={themedStyles.podiumLeft}>
+                  {getRankBadge(entry.rank)}
+                  <Image
+                    source={{ uri: getAvatarUrl(entry.name) }}
+                    style={themedStyles.podiumAvatar}
+                  />
                 </View>
-
-                <View style={themedStyles.centerSection}>
-                  <Text
-                    style={[
-                      themedStyles.userName,
-                      isTopThree && themedStyles.topThreeUserName,
-                    ]}
-                  >
-                    {entry.name}
-                  </Text>
-                </View>
-
-                <View style={themedStyles.rightSection}>
-                  <View style={themedStyles.statsContainer}>
-                    <Text
-                      style={[
-                        themedStyles.coinsText,
-                        isTopThree && themedStyles.topThreeCoinsText,
-                      ]}
-                    >
-                      {entry.totalCoins}
-                    </Text>
-                    <Text style={themedStyles.coinsLabel}>coins</Text>
-                  </View>
-                  <View style={themedStyles.referralsContainer}>
-                    <Users
-                      color={isTopThree ? colors.primary : colors.textPrimary}
-                      size={14}
-                    />
-                    <Text
-                      style={[
-                        themedStyles.referralsText,
-                        isTopThree && themedStyles.topThreeReferralsText,
-                      ]}
-                    >
-                      {entry.totalReferrals}
-                    </Text>
+                <View style={themedStyles.podiumCenter}>
+                  <Text style={themedStyles.podiumName}>{entry.name}</Text>
+                  <View style={themedStyles.podiumStats}>
+                    <View style={themedStyles.statPill}>
+                      <Zap color={colors.primary} size={14} />
+                      <Text style={themedStyles.statValue}>
+                        {entry.totalCoins}
+                      </Text>
+                    </View>
+                    <View style={themedStyles.statPill}>
+                      <Users color={colors.textSecondary} size={14} />
+                      <Text style={themedStyles.statValue}>
+                        {entry.totalReferrals}
+                      </Text>
+                    </View>
                   </View>
                 </View>
+                {entry.rank === 1 && (
+                  <View style={themedStyles.crownIcon}>
+                    <Crown color="#FFD700" size={24} />
+                  </View>
+                )}
               </CardContent>
             </Card>
-          );
-        })}
-      </View>
-    );
-  };
+          ))}
 
-  const renderAdminDashboard = () => {
-    return (
-      <View style={themedStyles.adminContainer}>
-        <View style={themedStyles.header}>
-          <Shield color={colors.primary} size={32} />
-          <Text style={themedStyles.headerTitle}>ADMIN DASHBOARD</Text>
-          <Text style={themedStyles.headerSubtitle}>
-            System Overview & Management
-          </Text>
-        </View>
-
-        <View style={themedStyles.adminStatsContainer}>
-          <Card style={themedStyles.adminStatCard}>
-            <CardContent style={themedStyles.adminStatContent}>
-              <Users color={colors.primary} size={24} />
-              <Text style={themedStyles.adminStatNumber}>
-                {adminStats.totalUsers}
-              </Text>
-              <Text style={themedStyles.adminStatLabel}>Total Users</Text>
-            </CardContent>
-          </Card>
-
-          <Card style={themedStyles.adminStatCard}>
-            <CardContent style={themedStyles.adminStatContent}>
-              <CircleCheckBig color="#10B981" size={24} />
-              <Text
-                style={[themedStyles.adminStatNumber, { color: "#10B981" }]}
-              >
-                {adminStats.verifiedUsers}
-              </Text>
-              <Text style={themedStyles.adminStatLabel}>Verified Users</Text>
-            </CardContent>
-          </Card>
-
-          <Card style={themedStyles.adminStatCard}>
-            <CardContent style={themedStyles.adminStatContent}>
-              <BarChart3 color="#F59E0B" size={24} />
-              <Text
-                style={[themedStyles.adminStatNumber, { color: "#F59E0B" }]}
-              >
-                {adminStats.activeUsers}
-              </Text>
-              <Text style={themedStyles.adminStatLabel}>Active Users</Text>
-            </CardContent>
-          </Card>
-
-          <Card style={themedStyles.adminStatCard}>
-            <CardContent style={themedStyles.adminStatContent}>
-              <ShieldCheck color="#e708c2ff" size={24} />
-              <Text
-                style={[themedStyles.adminStatNumber, { color: "#e708c2ff" }]}
-              >
-                {adminStats.verificationRate}%
-              </Text>
-              <Text style={themedStyles.adminStatLabel}>Verified Rate</Text>
-            </CardContent>
-          </Card>
-
-          <Card style={themedStyles.adminStatCard}>
-            <CardContent style={themedStyles.adminStatContent}>
-              <UserCheck color="#f50b1fff" size={24} />
-              <Text
-                style={[themedStyles.adminStatNumber, { color: "#f50b1fff" }]}
-              >
-                {adminStats.registrations.today}
-              </Text>
-              <Text style={themedStyles.adminStatLabel}>registered Today</Text>
-            </CardContent>
-          </Card>
-
-          <Card style={themedStyles.adminStatCard}>
-            <CardContent style={themedStyles.adminStatContent}>
-              <UserCheck color="#f50b1fff" size={24} />
-              <Text
-                style={[themedStyles.adminStatNumber, { color: "#f50b1fff" }]}
-              >
-                {adminStats.registrations.thisMonth}
-              </Text>
-              <Text style={themedStyles.adminStatLabel}>This Month</Text>
-            </CardContent>
-          </Card>
-
-          <Card style={themedStyles.adminStatCard}>
-            <CardContent style={themedStyles.adminStatContent}>
-              <UserCheck color="#f50b1fff" size={24} />
-              <Text
-                style={[themedStyles.adminStatNumber, { color: "#f50b1fff" }]}
-              >
-                {adminStats.registrations.thisWeek}
-              </Text>
-              <Text style={themedStyles.adminStatLabel}>This Week</Text>
-            </CardContent>
-          </Card>
-        </View>
-
-        <View style={themedStyles.adminActionsContainer}>
-          <TouchableOpacity style={themedStyles.adminActionButton}>
-            <Settings color={colors.textPrimary} size={20} />
-            <Text style={themedStyles.adminActionText}>System Settings</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={themedStyles.adminActionButton}
-            onPress={() => setShowUploadScreen(!showUploadScreen)}
-          >
-            <Upload color={colors.textPrimary} size={20} />
-            <Text style={themedStyles.adminActionText}>
-              {showUploadScreen ? "Hide Upload" : "Upload Post"}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={themedStyles.adminActionButton}
-            onPress={() => setShowLeaderboard(!showLeaderboard)}
-          >
-            <Trophy color={colors.textPrimary} size={20} />
-            <Text style={themedStyles.adminActionText}>
-              {showLeaderboard ? "Hide Leaderboard" : "View Leaderboard"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {showUploadScreen && (
-          <View style={themedStyles.adminUploadSection}>
-            <AdminUploadScreen />
-          </View>
-        )}
-
-        {showLeaderboard && (
-          <View style={themedStyles.adminLeaderboardSection}>
-            <View style={themedStyles.leaderboardHeader}>
-              <Trophy color={colors.primary} size={24} />
-              <Text style={themedStyles.leaderboardSectionTitle}>
-                LEADERBOARD
-              </Text>
-              <Text style={themedStyles.leaderboardSectionSubtitle}>
-                Top performers this month
-              </Text>
-            </View>
-
-            {leaderboard.length > 0 ? (
-              renderLeaderboardRows()
-            ) : (
-              <Card style={themedStyles.emptyCard}>
-                <CardContent style={themedStyles.emptyState}>
-                  <Trophy color={colors.textSecondary} size={48} />
-                  <Text style={themedStyles.emptyTitle}>No Data Available</Text>
-                  <Text style={themedStyles.emptyDesc}>
-                    Be the first to start referring friends and appear on the
-                    leaderboard!
-                  </Text>
+          <View style={themedStyles.restOfList}>
+            {leaderboard.slice(3).map((entry) => (
+              <Card key={entry.rank} style={themedStyles.regularCard}>
+                <CardContent style={themedStyles.regularContent}>
+                  <View style={themedStyles.regularLeft}>
+                    {getRankBadge(entry.rank)}
+                    <Image
+                      source={{ uri: getAvatarUrl(entry.name) }}
+                      style={themedStyles.regularAvatar}
+                    />
+                    <Text style={themedStyles.regularName}>{entry.name}</Text>
+                  </View>
+                  <View style={themedStyles.regularRight}>
+                    <Text style={themedStyles.regularCoins}>
+                      {entry.totalCoins}
+                    </Text>
+                    <Text style={themedStyles.regularReferrals}>
+                      {entry.totalReferrals} refs
+                    </Text>
+                  </View>
                 </CardContent>
               </Card>
-            )}
+            ))}
           </View>
-        )}
+        </View>
+      ) : (
+        <Card style={themedStyles.emptyCard}>
+          <CardContent style={themedStyles.emptyContent}>
+            <Trophy color={colors.textSecondary} size={64} />
+            <Text style={themedStyles.emptyTitle}>No rankings yet</Text>
+            <Text style={themedStyles.emptyDescription}>
+              Be the first to climb the leaderboard!
+            </Text>
+          </CardContent>
+        </Card>
+      )}
+    </View>
+  );
+
+  const renderAdminDashboard = () => (
+    <View style={themedStyles.adminContainer}>
+      <View style={themedStyles.pageHeader}>
+        <View style={themedStyles.headerIcon}>
+          <Shield color={colors.primary} size={28} />
+        </View>
+        <Text style={themedStyles.pageTitle}>Admin Dashboard</Text>
+        <Text style={themedStyles.pageSubtitle}>
+          System overview & management
+        </Text>
       </View>
-    );
-  };
+
+      <View style={themedStyles.statsGrid}>
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <Users color={colors.primary} size={24} />
+            </View>
+            <Text style={themedStyles.statNumber}>{adminStats.totalUsers}</Text>
+            <Text style={themedStyles.statLabel}>Total Users</Text>
+            <View style={themedStyles.statTrend}>
+              <TrendingUp color="#10B981" size={14} />
+              <Text style={themedStyles.trendText}>
+                +{adminStats.registrations.today} today
+              </Text>
+            </View>
+          </CardContent>
+        </Card>
+
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <CircleCheckBig color="#10B981" size={24} />
+            </View>
+            <Text style={[themedStyles.statNumber, { color: "#10B981" }]}>
+              {adminStats.verifiedUsers}
+            </Text>
+            <Text style={themedStyles.statLabel}>Verified</Text>
+            <View style={themedStyles.statTrend}>
+              <Star color="#F59E0B" size={14} />
+              <Text style={themedStyles.trendText}>
+                {adminStats.verificationRate}% rate
+              </Text>
+            </View>
+          </CardContent>
+        </Card>
+
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <BarChart3 color="#F59E0B" size={24} />
+            </View>
+            <Text style={[themedStyles.statNumber, { color: "#F59E0B" }]}>
+              {adminStats.activeUsers}
+            </Text>
+            <Text style={themedStyles.statLabel}>Active</Text>
+            <View style={themedStyles.statTrend}>
+              <Zap color={colors.primary} size={14} />
+              <Text style={themedStyles.trendText}>This week</Text>
+            </View>
+          </CardContent>
+        </Card>
+
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIcon}>
+              <UserCheck color="#8B5CF6" size={24} />
+            </View>
+            <Text style={[themedStyles.statNumber, { color: "#8B5CF6" }]}>
+              {adminStats.registrations.thisMonth}
+            </Text>
+            <Text style={themedStyles.statLabel}>This Month</Text>
+            <View style={themedStyles.statTrend}>
+              <TrendingUp color="#10B981" size={14} />
+              <Text style={themedStyles.trendText}>
+                +{adminStats.registrations.thisWeek} week
+              </Text>
+            </View>
+          </CardContent>
+        </Card>
+      </View>
+
+      <View style={themedStyles.quickActions}>
+        <TouchableOpacity style={themedStyles.actionButton}>
+          <Settings color={colors.textPrimary} size={20} />
+          <Text style={themedStyles.actionText}>Settings</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderUploadScreen = () => (
+    <View style={themedStyles.uploadContainer}>
+      <View style={themedStyles.pageHeader}>
+        <View style={themedStyles.headerIcon}>
+          <Upload color={colors.primary} size={28} />
+        </View>
+        <Text style={themedStyles.pageTitle}>Content Upload</Text>
+        <Text style={themedStyles.pageSubtitle}>Manage posts and media</Text>
+      </View>
+      <AdminUploadScreen />
+    </View>
+  );
 
   const themedStyles = getThemedStyles(colors);
 
   if (loading) {
     return (
       <View style={themedStyles.loadingContainer}>
-        <Text style={themedStyles.loadingText}>Loading...</Text>
+        <Trophy color={colors.primary} size={48} />
+        <Text style={themedStyles.loadingText}>Loading leaderboard...</Text>
       </View>
     );
   }
 
   return (
     <View style={themedStyles.container}>
+      {isAdmin && (
+        <View style={themedStyles.tabBar}>
+          <TouchableOpacity
+            style={[
+              themedStyles.tab,
+              activeTab === "leaderboard" && themedStyles.activeTab,
+            ]}
+            onPress={() => setActiveTab("leaderboard")}
+          >
+            <Trophy
+              color={
+                activeTab === "leaderboard"
+                  ? colors.primary
+                  : colors.textSecondary
+              }
+              size={20}
+            />
+            <Text
+              style={[
+                themedStyles.tabText,
+                activeTab === "leaderboard" && themedStyles.activeTabText,
+              ]}
+            >
+              Leaderboard
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              themedStyles.tab,
+              activeTab === "dashboard" && themedStyles.activeTab,
+            ]}
+            onPress={() => setActiveTab("dashboard")}
+          >
+            <Shield
+              color={
+                activeTab === "dashboard"
+                  ? colors.primary
+                  : colors.textSecondary
+              }
+              size={20}
+            />
+            <Text
+              style={[
+                themedStyles.tabText,
+                activeTab === "dashboard" && themedStyles.activeTabText,
+              ]}
+            >
+              Dashboard
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              themedStyles.tab,
+              activeTab === "upload" && themedStyles.activeTab,
+            ]}
+            onPress={() => setActiveTab("upload")}
+          >
+            <Upload
+              color={
+                activeTab === "upload" ? colors.primary : colors.textSecondary
+              }
+              size={20}
+            />
+            <Text
+              style={[
+                themedStyles.tabText,
+                activeTab === "upload" && themedStyles.activeTabText,
+              ]}
+            >
+              Upload
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <ScrollView
         style={themedStyles.scrollView}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        showsVerticalScrollIndicator={false}
       >
         {isAdmin ? (
-          renderAdminDashboard()
-        ) : (
           <>
-            <View style={themedStyles.header}>
-              <Text style={themedStyles.headerTitle}>LEADERBOARD</Text>
-              <Text style={themedStyles.headerSubtitle}>
-                Top performers this month
-              </Text>
-            </View>
-
-            {leaderboard.length > 0 ? (
-              renderLeaderboardRows()
-            ) : (
-              <Card style={themedStyles.emptyCard}>
-                <CardContent style={themedStyles.emptyState}>
-                  <Trophy color={colors.textSecondary} size={48} />
-                  <Text style={themedStyles.emptyTitle}>No Data Available</Text>
-                  <Text style={themedStyles.emptyDesc}>
-                    Be the first to start referring friends and appear on the
-                    leaderboard!
-                  </Text>
-                </CardContent>
-              </Card>
-            )}
+            {activeTab === "leaderboard" && renderLeaderboard()}
+            {activeTab === "dashboard" && renderAdminDashboard()}
+            {activeTab === "upload" && renderUploadScreen()}
           </>
+        ) : (
+          renderLeaderboard()
         )}
       </ScrollView>
     </View>
@@ -514,57 +523,6 @@ export default function LeaderboardScreen() {
 
 const getThemedStyles = (colors: ThemeContextType["colors"]) =>
   StyleSheet.create({
-    adminContainer: {
-      flex: 1,
-      paddingHorizontal: 16,
-    },
-    adminStatsContainer: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      justifyContent: "space-between",
-      marginBottom: 24,
-      gap: 12,
-    },
-    adminStatCard: {
-      width: "48%",
-      backgroundColor: colors.cardBackground,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    adminStatContent: {
-      alignItems: "center",
-      padding: 20,
-      gap: 8,
-    },
-    adminStatNumber: {
-      fontSize: 24,
-      fontWeight: "bold",
-      color: colors.textPrimary,
-    },
-    adminStatLabel: {
-      fontSize: 12,
-      color: colors.textSecondary,
-      fontWeight: "500",
-    },
-    adminActionsContainer: {
-      gap: 12,
-    },
-    adminActionButton: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: colors.cardBackground,
-      padding: 16,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      gap: 12,
-    },
-    adminActionText: {
-      fontSize: 16,
-      fontWeight: "600",
-      color: colors.textPrimary,
-    },
     container: {
       flex: 1,
       backgroundColor: colors.background,
@@ -577,204 +535,298 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       justifyContent: "center",
       alignItems: "center",
       backgroundColor: colors.background,
+      gap: 16,
     },
     loadingText: {
-      color: colors.textPrimary,
+      color: colors.textSecondary,
       fontSize: 16,
+      fontWeight: "500",
     },
-    header: {
-      paddingTop: 60,
-      paddingBottom: 30,
-      paddingHorizontal: 20,
+    tabBar: {
+      flexDirection: "row",
+      backgroundColor: colors.cardBackground,
+      paddingHorizontal: 16,
+      paddingTop: 50,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    tab: {
+      flex: 1,
+      flexDirection: "row",
       alignItems: "center",
-      backgroundColor: colors.background,
+      justifyContent: "center",
+      paddingVertical: 16,
+      gap: 8,
     },
-    headerTitle: {
+    activeTab: {
+      borderBottomWidth: 2,
+      borderBottomColor: colors.primary,
+    },
+    tabText: {
+      fontSize: 14,
+      fontWeight: "500",
+      color: colors.textSecondary,
+    },
+    activeTabText: {
+      color: colors.primary,
+      fontWeight: "600",
+    },
+    pageHeader: {
+      alignItems: "center",
+      paddingVertical: 32,
+      paddingHorizontal: 20,
+    },
+    headerIcon: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.primary + "20",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+    pageTitle: {
       fontSize: 28,
       fontWeight: "bold",
       color: colors.textPrimary,
-      letterSpacing: 1,
-      marginBottom: 4,
+      marginBottom: 8,
     },
-    headerSubtitle: {
+    pageSubtitle: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: "center",
+    },
+    leaderboardContainer: {
+      paddingHorizontal: 16,
+    },
+    leaderboardList: {
+      gap: 16,
+    },
+    podiumCard: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 20,
+      overflow: "hidden",
+      elevation: 8,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 16,
+    },
+    firstPlaceCard: {
+      borderWidth: 2,
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + "08",
+    },
+    podiumContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      padding: 20,
+    },
+    podiumLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 16,
+    },
+    podiumCenter: {
+      flex: 1,
+      marginLeft: 16,
+    },
+    podiumName: {
+      fontSize: 18,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+      marginBottom: 8,
+    },
+    podiumStats: {
+      flexDirection: "row",
+      gap: 12,
+    },
+    statPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.background,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+      gap: 4,
+    },
+    statValue: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    crownIcon: {
+      position: "absolute",
+      top: -12,
+      right: 16,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 20,
+      padding: 8,
+      elevation: 4,
+    },
+    podiumAvatar: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      borderWidth: 3,
+      borderColor: colors.primary,
+    },
+    rankBadge: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    goldBadge: {
+      backgroundColor: "#FFD700",
+    },
+    silverBadge: {
+      backgroundColor: "#C0C0C0",
+    },
+    bronzeBadge: {
+      backgroundColor: "#CD7F32",
+    },
+    defaultBadge: {
+      backgroundColor: colors.primary,
+    },
+    rankText: {
+      fontSize: 14,
+      fontWeight: "bold",
+      color: colors.white,
+    },
+    restOfList: {
+      gap: 8,
+    },
+    regularCard: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 16,
+    },
+    regularContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: 16,
+    },
+    regularLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+      gap: 12,
+    },
+    regularRight: {
+      alignItems: "flex-end",
+    },
+    regularAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      borderWidth: 2,
+      borderColor: colors.border,
+    },
+    regularName: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.textPrimary,
+      flex: 1,
+    },
+    regularCoins: {
+      fontSize: 16,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+    },
+    regularReferrals: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    emptyCard: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 20,
+      marginHorizontal: 16,
+    },
+    emptyContent: {
+      alignItems: "center",
+      paddingVertical: 64,
+      paddingHorizontal: 32,
+      gap: 16,
+    },
+    emptyTitle: {
+      fontSize: 20,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+    },
+    emptyDescription: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: "center",
+      lineHeight: 24,
+    },
+    adminContainer: {
+      paddingHorizontal: 16,
+    },
+    statsGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 16,
+      marginBottom: 24,
+    },
+    statCard: {
+      width: (screenWidth - 48) / 2,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 20,
+    },
+    statContent: {
+      padding: 20,
+      alignItems: "center",
+      gap: 8,
+    },
+    statIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: colors.background,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    statNumber: {
+      fontSize: 24,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+    },
+    statLabel: {
       fontSize: 14,
       color: colors.textSecondary,
       fontWeight: "500",
     },
-    leaderboardContainer: {
-      flex: 1,
-      paddingHorizontal: 16,
-      paddingBottom: 20,
+    statTrend: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      marginTop: 4,
     },
-    modernCard: {
-      marginBottom: 12,
+    trendText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: "500",
+    },
+    quickActions: {
+      gap: 12,
+    },
+    actionButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.cardBackground,
+      padding: 20,
       borderRadius: 16,
-      backgroundColor: colors.cardBackground,
-      shadowColor: "#000",
-      shadowOffset: {
-        width: 0,
-        height: 2,
-      },
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-      elevation: 4,
-      borderWidth: 1,
-      borderColor: colors.border,
+      gap: 16,
     },
-    topThreeCard: {
-      borderColor: colors.primary,
-      borderWidth: 2,
-      backgroundColor: colors.cardBackground,
-      shadowOpacity: 0.2,
-      shadowColor: colors.primary,
-    },
-    topTenCard: {
-      borderColor: "#8B5CF6",
-      borderWidth: 1.5,
-      backgroundColor: colors.cardBackground,
-      shadowOpacity: 0.15,
-      shadowColor: "#8B5CF6",
-    },
-    cardContent: {
-      flexDirection: "row",
-      alignItems: "center",
-      padding: 16,
-    },
-    leftSection: {
-      flexDirection: "row",
-      alignItems: "center",
-      width: 80,
-    },
-    centerSection: {
-      flex: 1,
-    },
-    rightSection: {
-      alignItems: "flex-end",
-      minWidth: 80,
-    },
-    userName: {
+    actionText: {
       fontSize: 16,
       fontWeight: "600",
       color: colors.textPrimary,
     },
-    topThreeUserName: {
-      fontSize: 18,
-      fontWeight: "700",
-      color: colors.textPrimary,
-    },
-    statsContainer: {
-      alignItems: "flex-end",
-      marginBottom: 4,
-    },
-    coinsText: {
-      fontSize: 18,
-      fontWeight: "bold",
-      color: colors.textPrimary,
-    },
-    topThreeCoinsText: {
-      fontSize: 20,
-      color: colors.textPrimary,
-    },
-    coinsLabel: {
-      fontSize: 12,
-      color: colors.textSecondary,
-      fontWeight: "500",
-    },
-    referralsContainer: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-    },
-    referralsText: {
-      fontSize: 14,
-      fontWeight: "600",
-      color: colors.textSecondary,
-    },
-    topThreeReferralsText: {
-      color: colors.textPrimary,
-      fontWeight: "700",
-    },
-    avatar: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      backgroundColor: colors.cardBackground,
-      alignItems: "center",
-      justifyContent: "center",
-      borderWidth: 2,
-      position: "relative",
-    },
-    avatarText: {
-      fontSize: 14,
-      fontWeight: "bold",
-      color: colors.textPrimary,
-    },
-    crownContainer: {
-      position: "absolute",
-      top: -6,
-      right: -4,
-      backgroundColor: colors.cardBackground,
-      borderRadius: 8,
-      padding: 2,
-    },
-    emptyCard: {
-      margin: 20,
-      backgroundColor: colors.cardBackground,
-    },
-    emptyState: {
-      alignItems: "center",
-      paddingVertical: 40,
-      gap: 16,
-    },
-    emptyTitle: {
-      fontSize: 18,
-      fontWeight: "600",
-      color: colors.textPrimary,
-    },
-    emptyDesc: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      textAlign: "center",
-      lineHeight: 20,
-    },
-    rankBadge: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    rankBadgeText: {
-      fontSize: 12,
-      fontWeight: "bold",
-      color: "#FFFFFF",
-    },
-    adminLeaderboardSection: {
-      marginTop: 24,
-      paddingTop: 24,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-    },
-    leaderboardHeader: {
-      alignItems: "center",
-      marginBottom: 20,
-      gap: 8,
-    },
-    leaderboardSectionTitle: {
-      fontSize: 24,
-      fontWeight: "bold",
-      color: colors.textPrimary,
-      letterSpacing: 1,
-    },
-    leaderboardSectionSubtitle: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      fontWeight: "500",
-    },
-    adminUploadSection: {
-      marginTop: 24,
-      paddingTop: 24,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
+    uploadContainer: {
+      paddingHorizontal: 16,
     },
   });

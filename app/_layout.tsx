@@ -65,6 +65,10 @@ export default function RootLayout() {
           <Stack.Screen name="login" />
           <Stack.Screen name="register" />
           <Stack.Screen name="verify-otp" />
+          <Stack.Screen name="appsettings" />
+          <Stack.Screen name="notifications" />
+          <Stack.Screen name="accountsettings" />
+          <Stack.Screen name="helper" />
           <Stack.Screen name="(tabs)" />
         </Stack>
         {/* AppContent is rendered on top of the Stack to handle initial loading and redirects */}

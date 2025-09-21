@@ -37,7 +37,7 @@ export default function LoginPage() {
       if (result.success && result.token) {
         toast({
           title: "Login Successful",
-          description: "Welcome back to AdsMoney!",
+          description: "Welcome back to Party-Support!",
           variant: "success",
         });
         await saveAuthToken(result.token);
@@ -73,7 +73,9 @@ export default function LoginPage() {
     <View style={themedStyles.container}>
       <Card style={themedStyles.card}>
         <CardHeader style={themedStyles.cardHeader}>
-          <CardTitle style={themedStyles.title}>Login to AdsMoney</CardTitle>
+          <CardTitle style={themedStyles.title}>
+            Login to Party-Support
+          </CardTitle>
           <CardDescription style={themedStyles.description}>
             Enter your email and password to access your account
           </CardDescription>

@@ -10,17 +10,29 @@ import {
   Share,
   TouchableOpacity,
   Image,
+  Dimensions,
 } from "react-native";
 import { getReferralStats } from "@/lib/api";
 import QRCode from "react-native-qrcode-svg";
-import * as FileSystem from "expo-file-system";
-import * as Sharing from "expo-sharing";
-import { useRef } from "react";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
 import { useToast } from "@/components/ui/use-toast";
-import { Copy, Users, Gift, QrCode } from "lucide-react-native";
+import {
+  Copy,
+  Users,
+  Gift,
+  QrCode,
+  Share2,
+  Coins,
+  TrendingUp,
+  Calendar,
+  Zap,
+  Star,
+} from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
+import { Card, CardContent } from "@/components/ui/card";
+
+const { width: screenWidth } = Dimensions.get("window");
 
 interface ReferralStats {
   referralCode: string;
@@ -43,9 +55,9 @@ export default function ReferralsScreen() {
   const [stats, setStats] = useState<ReferralStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showQR, setShowQR] = useState(false);
   const { colors } = useTheme();
   const { toast } = useToast();
-  const qrCodeRef = useRef<any>(null);
 
   const fetchReferralData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -60,7 +72,7 @@ export default function ReferralsScreen() {
           totalCoinsEarned: result.data.totals?.totalCoins || 0,
           referralHistory: result.data.history?.referralHistory || [],
           referralLink: result.data.sharing?.referralLink || "",
-          qrCodeUrl: result.data.sharing?.qrCodeUrl || "", // <-- add this
+          qrCodeUrl: result.data.sharing?.qrCodeUrl || "",
         };
 
         setStats(mappedStats);
@@ -94,12 +106,12 @@ export default function ReferralsScreen() {
   const handleShare = async () => {
     if (!stats) return;
 
-    const shareMessage = `Join AdsMoney using my referral code: ${stats.referralCode}\n\nSign up now and we both earn rewards!\n\n${stats.referralLink}`;
+    const shareMessage = `🚀 Join Party-Support using my referral code: ${stats.referralCode}\n\n💰 Sign up now and we both earn rewards!\n\n🔗 ${stats.referralLink}`;
 
     try {
       await Share.share({
         message: shareMessage,
-        title: "Join AdsMoney with my referral!",
+        title: "Join Party-Support with my referral!",
       });
     } catch (error) {
       toast({
@@ -110,55 +122,32 @@ export default function ReferralsScreen() {
     }
   };
 
-  function ReferralQRCode({ qrCodeUrl }: { qrCodeUrl: string }) {
-    if (!qrCodeUrl) {
-      return <Text>No QR code available</Text>;
-    }
-
-    return (
-      <View style={{ alignItems: "center", marginTop: 20 }}>
-        <Image
-          source={{ uri: qrCodeUrl }}
-          style={{ width: 200, height: 200 }}
-          resizeMode="contain"
-        />
-        <Text style={{ marginTop: 10 }}>Scan this QR to join with my code</Text>
-      </View>
-    );
-  }
-
-  const handleShareQrCode = async () => {
-    if (!stats?.qrCodeUrl) {
-      toast({
-        title: "Error",
-        description: "No QR code available to share",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      await Share.share({
-        message: `Join AdsMoney using my referral link!\n\n${stats.referralLink}`,
-        url: stats.qrCodeUrl, // Share QR image if available
-        title: "My Referral QR Code",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to share QR code",
-        variant: "destructive",
-      });
-    }
-  };
-
   const copyToClipboard = async (text: string, type: string) => {
     await Clipboard.setStringAsync(text);
     toast({
-      title: "Copied!",
+      title: "Copied! 📋",
       description: `${type} copied to clipboard`,
       variant: "success",
     });
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const getAvatarUrl = (name: string) => {
+    const seed = name
+      .split("")
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const avatarIndex = seed % 100;
+    return `https://images.unsplash.com/photo-${
+      1500000000000 + avatarIndex
+    }?w=50&h=50&fit=crop&crop=face`;
   };
 
   const themedStyles = getThemedStyles(colors);
@@ -166,7 +155,10 @@ export default function ReferralsScreen() {
   if (loading && !stats) {
     return (
       <View style={themedStyles.loadingContainer}>
-        <Text style={themedStyles.loadingText}>Loading...</Text>
+        <Gift color={colors.primary} size={48} />
+        <Text style={themedStyles.loadingText}>
+          Loading your referral stats...
+        </Text>
       </View>
     );
   }
@@ -177,98 +169,207 @@ export default function ReferralsScreen() {
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
+      showsVerticalScrollIndicator={false}
     >
+      {/* Header */}
       <View style={themedStyles.header}>
-        <View style={themedStyles.headerTop}>
-          <Text style={themedStyles.title}>Earn Money By Refer</Text>
-          <TouchableOpacity
-            style={themedStyles.referButton}
-            onPress={handleShareQrCode}
-          >
-            <Text style={themedStyles.referButtonText}>Refer</Text>
-          </TouchableOpacity>
+        <View style={themedStyles.headerContent}>
+          <View style={themedStyles.headerIcon}>
+            <Gift color={colors.primary} size={28} />
+          </View>
+          <Text style={themedStyles.headerTitle}>Earn & Refer</Text>
+          <Text style={themedStyles.headerSubtitle}>
+            Share with friends and earn together
+          </Text>
         </View>
+        <TouchableOpacity
+          style={themedStyles.shareButton}
+          onPress={handleShare}
+        >
+          <Share2 color={colors.white} size={20} />
+        </TouchableOpacity>
       </View>
 
-      <View style={themedStyles.referSection}>
-        <View style={themedStyles.referCard}>
-          <View style={themedStyles.QrCode}>
-            {stats?.qrCodeUrl ? (
-              <Image
-                source={{ uri: stats.qrCodeUrl }}
-                style={{ width: 180, height: 180 }}
-                resizeMode="contain"
-              />
-            ) : stats?.referralLink ? (
-              <QRCode value={stats.referralLink} size={180} />
-            ) : (
-              <Text>No referral link available</Text>
-            )}
+      {/* Stats Cards */}
+      <View style={themedStyles.statsContainer}>
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIconContainer}>
+              <Coins color={colors.primary} size={24} />
+            </View>
+            <Text style={themedStyles.statNumber}>
+              {stats?.totalCoinsEarned || 0}
+            </Text>
+            <Text style={themedStyles.statLabel}>Total Earned</Text>
+            <View style={themedStyles.statTrend}>
+              <TrendingUp color="#10B981" size={14} />
+              <Text style={themedStyles.trendText}>Coins</Text>
+            </View>
+          </CardContent>
+        </Card>
+
+        <Card style={themedStyles.statCard}>
+          <CardContent style={themedStyles.statContent}>
+            <View style={themedStyles.statIconContainer}>
+              <Users color="#10B981" size={24} />
+            </View>
+            <Text style={[themedStyles.statNumber, { color: "#10B981" }]}>
+              {stats?.totalReferrals || 0}
+            </Text>
+            <Text style={themedStyles.statLabel}>Friends Referred</Text>
+            <View style={themedStyles.statTrend}>
+              <Star color="#F59E0B" size={14} />
+              <Text style={themedStyles.trendText}>Total</Text>
+            </View>
+          </CardContent>
+        </Card>
+      </View>
+
+      {/* QR Code Section */}
+      <Card style={themedStyles.qrCard}>
+        <CardContent style={themedStyles.qrContent}>
+          <View style={themedStyles.qrHeader}>
+            <TouchableOpacity
+              style={themedStyles.qrToggle}
+              onPress={() => setShowQR(!showQR)}
+            >
+              <QrCode color={colors.primary} size={24} />
+              <Text style={themedStyles.qrToggleText}>
+                {showQR ? "Hide QR Code" : "Show QR Code"}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          <Text style={themedStyles.referTitle}>Refer a friend</Text>
-          <Text style={themedStyles.referSubtitle}>
-            Share your referral code and earn 10 coins for each successful
-            referral!
-          </Text>
-          <View style={themedStyles.codeContainer}>
-            <Text style={themedStyles.codeLabel}>Your Code:</Text>
-            <View style={themedStyles.codeBox}>
-              <Text style={themedStyles.referralCode}>
-                {stats?.referralCode}
+          {showQR && (
+            <View style={themedStyles.qrSection}>
+              <View style={themedStyles.qrCodeContainer}>
+                {stats?.qrCodeUrl ? (
+                  <Image
+                    source={{ uri: stats.qrCodeUrl }}
+                    style={themedStyles.qrImage}
+                    resizeMode="contain"
+                  />
+                ) : stats?.referralLink ? (
+                  <QRCode
+                    value={stats.referralLink}
+                    size={160}
+                    backgroundColor={colors.cardBackground}
+                    color={colors.textPrimary}
+                  />
+                ) : (
+                  <View style={themedStyles.qrPlaceholder}>
+                    <QrCode color={colors.textSecondary} size={48} />
+                    <Text style={themedStyles.qrPlaceholderText}>
+                      No QR code available
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={themedStyles.qrDescription}>
+                Let friends scan this code to join instantly!
               </Text>
+            </View>
+          )}
+
+          {/* Referral Code Section */}
+          <View style={themedStyles.codeSection}>
+            <Text style={themedStyles.codeLabel}>Your Referral Code</Text>
+            <View style={themedStyles.codeContainer}>
+              <View style={themedStyles.codeDisplay}>
+                <Text style={themedStyles.referralCode}>
+                  {stats?.referralCode || "LOADING..."}
+                </Text>
+              </View>
               <TouchableOpacity
                 onPress={() =>
                   copyToClipboard(stats?.referralCode || "", "Referral code")
                 }
                 style={themedStyles.copyButton}
               >
-                <Copy color={colors.textPrimary} size={18} />
+                <Copy color={colors.white} size={18} />
               </TouchableOpacity>
             </View>
+            <Text style={themedStyles.codeDescription}>
+              Share this code and earn 10 coins for each successful referral! 🎉
+            </Text>
+          </View>
+        </CardContent>
+      </Card>
+
+      {/* Referral History */}
+      {stats?.referralHistory && stats.referralHistory.length > 0 ? (
+        <View style={themedStyles.historySection}>
+          <View style={themedStyles.sectionHeader}>
+            <View style={themedStyles.sectionIcon}>
+              <Users color={colors.primary} size={20} />
+            </View>
+            <Text style={themedStyles.sectionTitle}>Your Referrals</Text>
+            <Text style={themedStyles.sectionCount}>
+              {stats.referralHistory.length}
+            </Text>
+          </View>
+
+          <View style={themedStyles.historyList}>
+            {stats.referralHistory.map((referral, index) => (
+              <Card key={index} style={themedStyles.historyCard}>
+                <CardContent style={themedStyles.historyContent}>
+                  <View style={themedStyles.historyLeft}>
+                    <Image
+                      source={{
+                        uri: getAvatarUrl(
+                          referral.referredUser?.name || "User"
+                        ),
+                      }}
+                      style={themedStyles.historyAvatar}
+                    />
+                    <View style={themedStyles.historyInfo}>
+                      <Text style={themedStyles.historyName}>
+                        {referral.referredUser?.name || "Unknown User"}
+                      </Text>
+                      <View style={themedStyles.historyDateContainer}>
+                        <Calendar color={colors.textSecondary} size={12} />
+                        <Text style={themedStyles.historyDate}>
+                          {formatDate(referral.referredAt)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  <View style={themedStyles.historyRight}>
+                    <View style={themedStyles.earningsContainer}>
+                      <Zap color={colors.primary} size={16} />
+                      <Text style={themedStyles.earningsAmount}>
+                        +{referral.coinsEarned}
+                      </Text>
+                    </View>
+                  </View>
+                </CardContent>
+              </Card>
+            ))}
           </View>
         </View>
-      </View>
-
-      {stats?.referralHistory && stats.referralHistory.length > 0 && (
-        <View style={themedStyles.friendsList}>
-          {stats.referralHistory.map((referral, index) => (
-            <View key={index} style={themedStyles.friendItem}>
-              <View style={themedStyles.friendAvatar}>
-                <Text style={themedStyles.friendInitial}>
-                  {referral.referredUser?.name?.charAt(0).toUpperCase() || "?"}
-                </Text>
-              </View>
-              <View style={themedStyles.friendInfo}>
-                <Text style={themedStyles.friendName}>
-                  {referral.referredUser?.name || "Unknown"}
-                </Text>
-                <Text style={themedStyles.friendDate}>
-                  {new Date(referral.referredAt).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </Text>
-              </View>
-              <View style={themedStyles.friendEarnings}>
-                <Text style={themedStyles.earningsAmount}>
-                  ${referral.coinsEarned}.00
-                </Text>
-              </View>
+      ) : (
+        <Card style={themedStyles.emptyCard}>
+          <CardContent style={themedStyles.emptyContent}>
+            <View style={themedStyles.emptyIcon}>
+              <Users color={colors.textSecondary} size={48} />
             </View>
-          ))}
-        </View>
+            <Text style={themedStyles.emptyTitle}>No referrals yet</Text>
+            <Text style={themedStyles.emptyDescription}>
+              Start sharing your code to see your earnings and referrals here!
+            </Text>
+            <TouchableOpacity
+              style={themedStyles.emptyAction}
+              onPress={handleShare}
+            >
+              <Share2 color={colors.primary} size={20} />
+              <Text style={themedStyles.emptyActionText}>Share Now</Text>
+            </TouchableOpacity>
+          </CardContent>
+        </Card>
       )}
 
-      {(!stats?.referralHistory || stats.referralHistory.length === 0) && (
-        <View style={themedStyles.emptyState}>
-          <Users color={colors.textPrimary} size={48} />
-          <Text style={themedStyles.emptyTitle}>No friends referred yet</Text>
-          <Text style={themedStyles.emptyDesc}>
-            Start sharing your code to see your earnings here!
-          </Text>
-        </View>
-      )}
+      {/* Bottom Spacing */}
+      <View style={themedStyles.bottomSpacing} />
     </ScrollView>
   );
 }
@@ -284,200 +385,349 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       justifyContent: "center",
       alignItems: "center",
       backgroundColor: colors.background,
+      gap: 16,
     },
     loadingText: {
-      color: colors.textPrimary,
+      color: colors.textSecondary,
       fontSize: 16,
+      fontWeight: "500",
     },
     header: {
-      padding: 20,
-      paddingTop: 60,
-    },
-    headerTop: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
+      paddingHorizontal: 20,
+      paddingTop: 60,
+      paddingBottom: 24,
     },
-    title: {
+    headerContent: {
+      flex: 1,
+      alignItems: "center",
+    },
+    headerIcon: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.primary + "20",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+    headerTitle: {
+      fontSize: 28,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+      marginBottom: 4,
+    },
+    headerSubtitle: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: "center",
+    },
+    shareButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+      position: "absolute",
+      right: 20,
+      top: 70,
+    },
+    statsContainer: {
+      flexDirection: "row",
+      paddingHorizontal: 20,
+      marginBottom: 24,
+      gap: 16,
+    },
+    statCard: {
+      flex: 1,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 20,
+    },
+    statContent: {
+      padding: 20,
+      alignItems: "center",
+      gap: 8,
+    },
+    statIconContainer: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: colors.background,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    statNumber: {
       fontSize: 24,
       fontWeight: "bold",
       color: colors.textPrimary,
     },
-    referButton: {
-      backgroundColor: colors.primary,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderRadius: 20,
-    },
-    referButtonText: {
-      color: colors.textPrimary,
-      fontWeight: "600",
+    statLabel: {
       fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: "500",
     },
-    referSection: {
-      paddingHorizontal: 20,
-      paddingVertical: -10,
-      marginTop: 20,
+    statTrend: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
     },
-    referCard: {
+    trendText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: "500",
+    },
+    qrCard: {
+      marginHorizontal: 20,
+      marginBottom: 24,
       backgroundColor: colors.cardBackground,
-      borderRadius: 20,
-      padding: 24,
-      alignItems: "center",
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 12,
-      elevation: 8,
-      width: "100%",
+      borderRadius: 24,
     },
-
-    QrCode: {
-      width: 200,
-      height: 200,
-      borderColor: colors.primary,
-      borderWidth: 2,
-      borderRadius: 16,
-      justifyContent: "center",
+    qrContent: {
+      padding: 24,
+    },
+    qrHeader: {
       alignItems: "center",
-      backgroundColor: colors.background,
-      shadowOpacity: 0.15,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 8,
-      elevation: 6,
       marginBottom: 20,
     },
-    referIllustration: {
-      width: 80,
-      height: 80,
-      borderColor: colors.primary,
-      shadowOpacity: 0.15,
-      shadowColor: colors.primary,
-      borderWidth: 1.5,
-      borderRadius: 40,
-      justifyContent: "center",
+    qrToggle: {
+      flexDirection: "row",
       alignItems: "center",
+      backgroundColor: colors.primary + "20",
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+      borderRadius: 20,
+      gap: 8,
+    },
+    qrToggleText: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.primary,
+    },
+    qrSection: {
+      alignItems: "center",
+      marginBottom: 24,
+    },
+    qrCodeContainer: {
+      padding: 20,
+      backgroundColor: colors.background,
+      borderRadius: 20,
+      marginBottom: 12,
+      borderWidth: 2,
+      borderColor: colors.primary + "30",
+    },
+    qrImage: {
+      width: 160,
+      height: 160,
+    },
+    qrPlaceholder: {
+      width: 160,
+      height: 160,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 12,
+    },
+    qrPlaceholderText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: "center",
+    },
+    qrDescription: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: "center",
+      fontWeight: "500",
+    },
+    codeSection: {
+      alignItems: "center",
+    },
+    codeLabel: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.textPrimary,
       marginBottom: 16,
     },
-    referTitle: {
+    codeContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginBottom: 16,
+    },
+    codeDisplay: {
+      backgroundColor: colors.background,
+      paddingHorizontal: 24,
+      paddingVertical: 16,
+      borderRadius: 16,
+      borderWidth: 2,
+      borderColor: colors.primary,
+    },
+    referralCode: {
       fontSize: 20,
       fontWeight: "bold",
       color: colors.textPrimary,
-      marginBottom: 8,
+      letterSpacing: 3,
+      fontFamily: "monospace",
     },
-    referSubtitle: {
+    copyButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    codeDescription: {
       fontSize: 14,
       color: colors.textSecondary,
       textAlign: "center",
       lineHeight: 20,
-      marginBottom: 20,
+      maxWidth: "80%",
     },
-    codeContainer: {
-      width: "100%",
-      alignItems: "center",
-      gap: 12,
-    },
-    codeLabel: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      fontWeight: "600",
-    },
-    codeBox: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: colors.cardBackground,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      borderRadius: 30,
-      borderWidth: 1,
-      borderColor: colors.primary,
-      gap: 12,
-    },
-    referralCode: {
-      fontSize: 18,
-      fontWeight: "bold",
-      color: colors.textPrimary,
-      letterSpacing: 2,
-      fontFamily: "monospace",
-    },
-    copyButton: {
-      padding: 8,
-      backgroundColor: colors.primary,
-      borderRadius: 8,
-    },
-    friendsList: {
+    historySection: {
       paddingHorizontal: 20,
-      marginTop: 24,
-      gap: 12,
+      marginBottom: 24,
     },
-    friendItem: {
+    sectionHeader: {
       flexDirection: "row",
       alignItems: "center",
-      backgroundColor: colors.cardBackground,
-      padding: 16,
-      borderRadius: 16,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 4,
+      marginBottom: 16,
+      gap: 12,
     },
-    friendAvatar: {
-      width: 48,
-      height: 48,
-      borderColor: colors.primary,
-      shadowOpacity: 0.15,
-      shadowColor: colors.primary,
-      borderWidth: 1.5,
-      backgroundColor: colors.cardBackground,
-      borderRadius: 24,
-      justifyContent: "center",
+    sectionIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.primary + "20",
       alignItems: "center",
-      marginRight: 16,
+      justifyContent: "center",
     },
-    friendInitial: {
-      color: colors.textPrimary,
-      fontSize: 18,
+    sectionTitle: {
+      fontSize: 20,
       fontWeight: "bold",
-    },
-    friendInfo: {
+      color: colors.textPrimary,
       flex: 1,
     },
-    friendName: {
+    sectionCount: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.primary,
+      backgroundColor: colors.primary + "20",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 12,
+    },
+    historyList: {
+      gap: 12,
+    },
+    historyCard: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 16,
+    },
+    historyContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: 16,
+    },
+    historyLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+      gap: 12,
+    },
+    historyAvatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      borderWidth: 2,
+      borderColor: colors.primary + "50",
+    },
+    historyInfo: {
+      flex: 1,
+    },
+    historyName: {
       fontSize: 16,
       fontWeight: "600",
       color: colors.textPrimary,
-      marginBottom: 2,
+      marginBottom: 4,
     },
-    friendDate: {
+    historyDateContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
+    historyDate: {
       fontSize: 12,
       color: colors.textSecondary,
+      fontWeight: "500",
     },
-    friendEarnings: {
+    historyRight: {
       alignItems: "flex-end",
+    },
+    earningsContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.primary + "20",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 12,
+      gap: 4,
     },
     earningsAmount: {
       fontSize: 16,
       fontWeight: "bold",
-      color: colors.textPrimary,
+      color: colors.primary,
     },
-    emptyState: {
+    emptyCard: {
+      marginHorizontal: 20,
+      marginBottom: 24,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 24,
+    },
+    emptyContent: {
       alignItems: "center",
-      paddingVertical: 60,
-      paddingHorizontal: 40,
+      paddingVertical: 48,
+      paddingHorizontal: 32,
+      gap: 16,
     },
-    emptyTitle: {
-      fontSize: 18,
-      fontWeight: "600",
-      color: colors.textPrimary,
-      marginTop: 16,
+    emptyIcon: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: colors.background,
+      alignItems: "center",
+      justifyContent: "center",
       marginBottom: 8,
     },
-    emptyDesc: {
-      fontSize: 14,
+    emptyTitle: {
+      fontSize: 20,
+      fontWeight: "bold",
+      color: colors.textPrimary,
+    },
+    emptyDescription: {
+      fontSize: 16,
       color: colors.textSecondary,
       textAlign: "center",
-      lineHeight: 20,
+      lineHeight: 24,
+      marginBottom: 8,
+    },
+    emptyAction: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.primary + "20",
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      borderRadius: 20,
+      gap: 8,
+    },
+    emptyActionText: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.primary,
+    },
+    bottomSpacing: {
+      height: 32,
     },
   });
