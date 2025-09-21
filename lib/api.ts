@@ -1,11 +1,10 @@
-const BACKEND_BASE_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:3000/api/auth";
-const REFERRAL_BASE_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL?.replace("/api/auth", "/api/referral") ||
-  "http://localhost:3000/api/referral";
-const IMAGES_BASE_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL?.replace("/api/auth", "/api/images") ||
-  "http://localhost:3000/api/images";
+const ROUTE_URL =
+  process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:3000";
+
+const BACKEND_BASE_URL = `${ROUTE_URL}/api/auth`;
+const REFERRAL_BASE_URL = `${ROUTE_URL}/api/referral`;
+const IMAGES_BASE_URL = `${ROUTE_URL}/api/images`;
+const SOCIAL_BASE_URL = `${ROUTE_URL}/api/social`;
 
 import {
   getAuthToken,
@@ -429,8 +428,9 @@ export async function getTotalUserCount() {
 
 // Image/Post related API Functions
 export async function uploadPost(data: {
-  title: string;
-  description: string;
+  content: string;
+  category?: string;
+  tags?: string[];
   images: Array<{
     uri: string;
     name: string;
@@ -448,8 +448,17 @@ export async function uploadPost(data: {
     }
 
     const formData = new FormData();
-    formData.append("title", data.title);
-    formData.append("description", data.description);
+
+    // Add content and metadata
+    formData.append("content", data.content);
+
+    if (data.category) {
+      formData.append("category", data.category);
+    }
+
+    if (data.tags && data.tags.length > 0) {
+      formData.append("tags", JSON.stringify(data.tags));
+    }
 
     // Add images to form data
     data.images.forEach((image, index) => {
@@ -464,7 +473,7 @@ export async function uploadPost(data: {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "multipart/form-data",
+        // Don't set Content-Type for FormData - let React Native handle it
       },
       body: formData,
     });
@@ -484,17 +493,27 @@ export async function uploadPost(data: {
   }
 }
 
-export async function getPosts(page = 1, limit = 10) {
+export async function getPosts(page = 1, limit = 20, category?: string) {
   try {
-    const response = await fetch(
-      `${IMAGES_BASE_URL}?page=${page}&limit=${limit}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const token = await getAuthToken();
+    const queryParams = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      ...(category && { category }),
+    });
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${IMAGES_BASE_URL}?${queryParams}`, {
+      method: "GET",
+      headers,
+    });
 
     const result = await handleApiResponse(response);
 
@@ -507,7 +526,461 @@ export async function getPosts(page = 1, limit = 10) {
     return {
       success: false,
       message: error.message || "Failed to load posts. Please try again.",
-      data: [],
+      data: { images: [], pagination: {} },
+    };
+  }
+}
+
+export async function getPostDetails(postId: string) {
+  try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${IMAGES_BASE_URL}/${postId}`, {
+      method: "GET",
+      headers,
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting post details:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load post details.",
+    };
+  }
+}
+
+export async function likePost(postId: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(`${IMAGES_BASE_URL}/${postId}/like`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error liking post:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to like post. Please try again.",
+    };
+  }
+}
+
+export async function commentOnPost(postId: string, content: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(`${IMAGES_BASE_URL}/${postId}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ content }),
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error commenting on post:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to comment. Please try again.",
+    };
+  }
+}
+
+export async function deleteComment(postId: string, commentId: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(
+      `${IMAGES_BASE_URL}/${postId}/comments/${commentId}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error deleting comment:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to delete comment. Please try again.",
+    };
+  }
+}
+
+export async function deletePost(postId: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(`${IMAGES_BASE_URL}/${postId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error deleting post:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to delete post. Please try again.",
+    };
+  }
+}
+
+export async function getUserPosts(page = 1, limit = 20) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(
+      `${IMAGES_BASE_URL}/user/my-images?page=${page}&limit=${limit}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting user posts:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load your posts. Please try again.",
+      data: { images: [], pagination: {} },
+    };
+  }
+}
+
+// Social API Functions
+export async function followUser(userId: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(`${SOCIAL_BASE_URL}/follow/${userId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error following user:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to follow user. Please try again.",
+    };
+  }
+}
+
+export async function unfollowUser(userId: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(`${SOCIAL_BASE_URL}/follow/${userId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error unfollowing user:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to unfollow user. Please try again.",
+    };
+  }
+}
+
+export async function getSocialFeed(page = 1, limit = 20, timeframe = "week") {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/feed?page=${page}&limit=${limit}&timeframe=${timeframe}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting social feed:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load social feed. Please try again.",
+      data: { posts: [], pagination: {} },
+    };
+  }
+}
+
+export async function getUserProfile(userId: string) {
+  try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${SOCIAL_BASE_URL}/users/${userId}/profile`, {
+      method: "GET",
+      headers,
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting user profile:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load user profile.",
+    };
+  }
+}
+
+export async function searchUsers(query: string, page = 1, limit = 20) {
+  try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/users/search?q=${encodeURIComponent(
+        query
+      )}&page=${page}&limit=${limit}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error searching users:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to search users. Please try again.",
+      data: { users: [], pagination: {} },
+    };
+  }
+}
+
+export async function getFollowers(userId: string, page = 1, limit = 20) {
+  try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/users/${userId}/followers?page=${page}&limit=${limit}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting followers:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load followers.",
+      data: { followers: [], pagination: {} },
+    };
+  }
+}
+
+export async function getFollowing(userId: string, page = 1, limit = 20) {
+  try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/users/${userId}/following?page=${page}&limit=${limit}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting following:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load following.",
+      data: { following: [], pagination: {} },
     };
   }
 }
@@ -524,7 +997,7 @@ export async function getAdminPosts(page = 1, limit = 20) {
     }
 
     const response = await fetch(
-      `${IMAGES_BASE_URL}/admin?page=${page}&limit=${limit}`,
+      `${IMAGES_BASE_URL}/admin/all?page=${page}&limit=${limit}`,
       {
         method: "GET",
         headers: {
