@@ -62,6 +62,7 @@ export default function LeaderboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminFollowers, setAdminFollowers] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<
     "leaderboard" | "dashboard" | "upload"
   >("leaderboard");

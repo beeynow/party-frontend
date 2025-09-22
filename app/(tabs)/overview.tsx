@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import {
   View,
@@ -10,9 +8,21 @@ import {
   Image,
   TouchableOpacity,
   Dimensions,
-  Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  FlatList,
+  ActivityIndicator,
 } from "react-native";
-import { getDashboardData, getPosts, likePost, commentOnPost } from "@/lib/api";
+import {
+  getDashboardData,
+  getPosts,
+  likePost,
+  commentOnPost,
+  followUser,
+  unfollowUser,
+} from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
@@ -28,15 +38,35 @@ import {
   CircleCheckBig,
   ShieldCheck,
   ExternalLink,
+  X,
+  Send,
+  UserPlus,
+  UserMinus,
+  UserCheck,
 } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   clearPostsCache,
   getPostsCache,
   savePostsCache,
+  getUserData,
 } from "@/lib/auth-storage";
 
 const { width: screenWidth } = Dimensions.get("window");
+
+interface Comment {
+  _id: string;
+  user: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  userName: string;
+  userEmail: string;
+  content: string;
+  createdAt: string;
+  likeCount: number;
+}
 
 interface Post {
   _id: string;
@@ -56,6 +86,8 @@ interface Post {
   isLikedByUser: boolean;
   category?: string;
   tags?: string[];
+  comments?: Comment[];
+  isFollowingCreator?: boolean;
 }
 
 interface UserData {
@@ -67,6 +99,283 @@ interface UserData {
   referralCount: number;
 }
 
+interface CommentsModalProps {
+  visible: boolean;
+  onClose: () => void;
+  post: Post | null;
+  onAddComment: (postId: string, content: string) => Promise<void>;
+  colors: ThemeContextType["colors"];
+}
+
+const CommentsModal = ({
+  visible,
+  onClose,
+  post,
+  onAddComment,
+  colors,
+}: CommentsModalProps) => {
+  const [newComment, setNewComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!newComment.trim() || !post) return;
+
+    setSubmitting(true);
+    try {
+      await onAddComment(post._id, newComment.trim());
+      setNewComment("");
+    } catch (error) {
+      console.error("Failed to add comment:", error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const getModalStyles = (colors: ThemeContextType["colors"]) =>
+    StyleSheet.create({
+      modalContainer: {
+        flex: 1,
+        backgroundColor: colors.background,
+      },
+      modalHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+      },
+      modalTitle: {
+        fontSize: 18,
+        fontWeight: "600",
+        color: colors.textPrimary,
+      },
+      closeButton: {
+        padding: 8,
+        borderRadius: 20,
+      },
+      commentsList: {
+        flex: 1,
+      },
+      commentsContent: {
+        padding: 16,
+      },
+      commentItem: {
+        flexDirection: "row",
+        marginBottom: 16,
+      },
+      commentAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: colors.primary + "22",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 12,
+      },
+      commentAvatarText: {
+        fontSize: 16,
+        fontWeight: "600",
+        color: colors.primary,
+      },
+      commentContent: {
+        flex: 1,
+      },
+      commentHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        marginBottom: 4,
+      },
+      commentAuthor: {
+        fontSize: 15,
+        fontWeight: "600",
+        color: colors.textPrimary,
+      },
+      commentTime: {
+        fontSize: 12,
+        color: colors.textSecondary,
+      },
+      commentText: {
+        fontSize: 14,
+        color: colors.textPrimary,
+        lineHeight: 20,
+      },
+      emptyComments: {
+        alignItems: "center",
+        marginTop: 40,
+      },
+      emptyCommentsText: {
+        fontSize: 16,
+        fontWeight: "600",
+        color: colors.textPrimary,
+        marginTop: 12,
+      },
+      emptyCommentsSubtext: {
+        fontSize: 14,
+        color: colors.textSecondary,
+        marginTop: 4,
+        textAlign: "center",
+      },
+      commentInputContainer: {
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+        padding: 12,
+      },
+      commentInputWrapper: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: colors.cardBackground,
+        borderRadius: 24,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+      },
+      commentInput: {
+        flex: 1,
+        fontSize: 14,
+        color: colors.textPrimary,
+        paddingVertical: 6,
+      },
+      sendButton: {
+        marginLeft: 8,
+        padding: 8,
+        borderRadius: 20,
+        backgroundColor: colors.primary,
+      },
+      sendButtonDisabled: {
+        backgroundColor: colors.border,
+      },
+      characterCount: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        textAlign: "right",
+        marginTop: 4,
+      },
+    });
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400)
+      return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  const themedModalStyles = getModalStyles(colors);
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={themedModalStyles.modalContainer}>
+        {/* Header */}
+        <View style={themedModalStyles.modalHeader}>
+          <Text style={themedModalStyles.modalTitle}>
+            Comments ({post?.commentCount || 0})
+          </Text>
+          <TouchableOpacity
+            onPress={onClose}
+            style={themedModalStyles.closeButton}
+          >
+            <X color={colors.textPrimary} size={24} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Comments List */}
+        <FlatList
+          data={post?.comments || []}
+          keyExtractor={(item) => item._id}
+          style={themedModalStyles.commentsList}
+          contentContainerStyle={themedModalStyles.commentsContent}
+          renderItem={({ item: comment }) => (
+            <View style={themedModalStyles.commentItem}>
+              <View style={themedModalStyles.commentAvatar}>
+                <Text style={themedModalStyles.commentAvatarText}>
+                  {comment.userName?.charAt(0).toUpperCase() || "?"}
+                </Text>
+              </View>
+              <View style={themedModalStyles.commentContent}>
+                <View style={themedModalStyles.commentHeader}>
+                  <Text style={themedModalStyles.commentAuthor}>
+                    {comment.userName}
+                  </Text>
+                  <Text style={themedModalStyles.commentTime}>
+                    {formatTimeAgo(comment.createdAt)}
+                  </Text>
+                </View>
+                <Text style={themedModalStyles.commentText}>
+                  {comment.content}
+                </Text>
+              </View>
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={themedModalStyles.emptyComments}>
+              <MessageCircle color={colors.textSecondary} size={48} />
+              <Text style={themedModalStyles.emptyCommentsText}>
+                No comments yet
+              </Text>
+              <Text style={themedModalStyles.emptyCommentsSubtext}>
+                Be the first to share your thoughts!
+              </Text>
+            </View>
+          }
+          showsVerticalScrollIndicator={false}
+        />
+
+        {/* Comment Input */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={themedModalStyles.commentInputContainer}
+        >
+          <View style={themedModalStyles.commentInputWrapper}>
+            <TextInput
+              style={themedModalStyles.commentInput}
+              placeholder="Write a comment..."
+              placeholderTextColor={colors.textSecondary}
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline
+              maxLength={500}
+            />
+            <TouchableOpacity
+              onPress={handleSubmit}
+              disabled={!newComment.trim() || submitting}
+              style={[
+                themedModalStyles.sendButton,
+                (!newComment.trim() || submitting) &&
+                  themedModalStyles.sendButtonDisabled,
+              ]}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Send
+                  color={
+                    newComment.trim() && !submitting
+                      ? colors.white
+                      : colors.textSecondary
+                  }
+                  size={20}
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+          <Text style={themedModalStyles.characterCount}>
+            {newComment.length}/500
+          </Text>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+};
+
 export default function OverviewScreen() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -75,8 +384,20 @@ export default function OverviewScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [commentsModalVisible, setCommentsModalVisible] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
   const { colors } = useTheme();
   const { toast } = useToast();
+
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const user = await getUserData();
+      setCurrentUserId(user?.id || null);
+    };
+    getCurrentUser();
+  }, []);
 
   const fetchDashboardData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -139,6 +460,8 @@ export default function OverviewScreen() {
             isLikedByUser: image.isLikedByUser || false,
             category: image.category || "general",
             tags: image.tags || [],
+            comments: image.comments || [],
+            isFollowingCreator: image.isFollowingCreator || false,
           }));
 
           setPosts(transformedPosts);
@@ -177,6 +500,8 @@ export default function OverviewScreen() {
           isLikedByUser: image.isLikedByUser || false,
           category: image.category || "general",
           tags: image.tags || [],
+          comments: image.comments || [],
+          isFollowingCreator: image.isFollowingCreator || false,
         }));
 
         if (isRefresh || pageNum === 1) {
@@ -318,58 +643,103 @@ export default function OverviewScreen() {
     }
   };
 
-  const handleComment = (postId: string) => {
-    Alert.prompt(
-      "Add Comment",
-      "What do you think about this post?",
-      async (text) => {
-        if (text && text.trim()) {
-          try {
-            console.log("💬 Adding comment:", { postId, text: text.trim() });
-            const result = await commentOnPost(postId, text.trim());
-            console.log("💬 Comment result:", result);
+  const handleComment = (post: Post) => {
+    setSelectedPost(post);
+    setCommentsModalVisible(true);
+  };
 
-            if (result.success) {
-              // Update post with new comment count
-              setPosts((prevPosts) =>
-                prevPosts.map((post) =>
-                  post._id === postId
-                    ? {
-                        ...post,
-                        commentCount: result.data.commentCount,
-                      }
-                    : post
-                )
-              );
+  const handleAddComment = async (postId: string, content: string) => {
+    try {
+      console.log("💬 Adding comment:", { postId, text: content.trim() });
+      const result = await commentOnPost(postId, content.trim());
+      console.log("💬 Comment result:", result);
 
-              toast({
-                title: "Success",
-                description: "Comment added successfully!",
-                variant: "success",
-              });
-            } else {
-              throw new Error(result.message || "Failed to add comment");
-            }
-          } catch (error: any) {
-            console.error("❌ Comment error:", error);
-            toast({
-              title: "Error",
-              description: error.message || "Failed to add comment",
-              variant: "destructive",
-            });
-          }
-        } else {
-          toast({
-            title: "Warning",
-            description: "Please enter a comment",
-            variant: "destructive",
-          });
-        }
-      },
-      "plain-text",
-      "", // default text
-      "Add Comment" // OK button text
+      if (result.success) {
+        // Update post with new comment count
+        setPosts((prevPosts) =>
+          prevPosts.map((post) =>
+            post._id === postId
+              ? {
+                  ...post,
+                  commentCount: result.data.commentCount,
+                }
+              : post
+          )
+        );
+
+        // Update selected post for modal
+        setSelectedPost((prevPost) =>
+          prevPost && prevPost._id === postId
+            ? {
+                ...prevPost,
+                commentCount: result.data.commentCount,
+              }
+            : prevPost
+        );
+
+        toast({
+          title: "Success",
+          description: "Comment added successfully!",
+          variant: "success",
+        });
+      } else {
+        throw new Error(result.message || "Failed to add comment");
+      }
+    } catch (error: any) {
+      console.error("❌ Comment error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add comment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleFollow = async (
+    userId: string,
+    isCurrentlyFollowing: boolean
+  ) => {
+    // Optimistic update
+    setPosts((prevPosts) =>
+      prevPosts.map((post) =>
+        post.createdBy._id === userId
+          ? { ...post, isFollowingCreator: !isCurrentlyFollowing }
+          : post
+      )
     );
+
+    try {
+      const result = isCurrentlyFollowing
+        ? await unfollowUser(userId)
+        : await followUser(userId);
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: isCurrentlyFollowing
+            ? "Successfully unfollowed user"
+            : "Successfully followed user",
+          variant: "success",
+        });
+      } else {
+        throw new Error(result.message || "Failed to update follow status");
+      }
+    } catch (error: any) {
+      // Revert optimistic update
+      setPosts((prevPosts) =>
+        prevPosts.map((post) =>
+          post.createdBy._id === userId
+            ? { ...post, isFollowingCreator: isCurrentlyFollowing }
+            : post
+        )
+      );
+
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update follow status",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleShare = async (postId: string) => {
@@ -377,12 +747,10 @@ export default function OverviewScreen() {
       const post = posts.find((p) => p._id === postId);
       if (!post) return;
 
-      // Get the post URL - you'll need to adjust this based on your app's structure
       const postUrl = `${
         process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:3000"
       }/posts/${postId}`;
 
-      // For React Native, you can use the Share API
       const { Share } = require("react-native");
 
       await Share.share({
@@ -447,16 +815,6 @@ export default function OverviewScreen() {
     if (diffInSeconds < 86400)
       return `${Math.floor(diffInSeconds / 3600)}h ago`;
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
-  };
-
-  const getAvatarUrl = (name: string) => {
-    const seed = name
-      .split("")
-      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const avatarIndex = seed % 100;
-    return `https://images.unsplash.com/photo-${
-      1500000000000 + avatarIndex
-    }?w=100&h=100&fit=crop&crop=face`;
   };
 
   const themedStyles = getThemedStyles(colors);
@@ -532,15 +890,41 @@ export default function OverviewScreen() {
                           </View>
                         </View>
                       </View>
-                      <TouchableOpacity
-                        onPress={() => handleMore(post._id)}
-                        style={themedStyles.moreButton}
-                      >
-                        <MoreHorizontal
-                          color={colors.textSecondary}
-                          size={20}
-                        />
-                      </TouchableOpacity>
+                      <View style={themedStyles.headerActions}>
+                        {/* Follow Button */}
+                        {currentUserId &&
+                          currentUserId !== post.createdBy._id && (
+                            <TouchableOpacity
+                              onPress={() =>
+                                handleFollow(
+                                  post.createdBy._id,
+                                  post.isFollowingCreator || false
+                                )
+                              }
+                              style={[
+                                themedStyles.followButton,
+                                post.isFollowingCreator
+                                  ? themedStyles.followingButton
+                                  : themedStyles.followButtonDefault,
+                              ]}
+                              activeOpacity={0.8}
+                            >
+                              {post.isFollowingCreator ? (
+                                <>
+                                  <Text style={themedStyles.followButtonText}>
+                                    Following
+                                  </Text>
+                                </>
+                              ) : (
+                                <>
+                                  <Text style={themedStyles.followButtonText}>
+                                    Follow
+                                  </Text>
+                                </>
+                              )}
+                            </TouchableOpacity>
+                          )}
+                      </View>
                     </View>
 
                     {/* Post Content */}
@@ -590,7 +974,7 @@ export default function OverviewScreen() {
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        onPress={() => handleComment(post._id)}
+                        onPress={() => handleComment(post)}
                         style={themedStyles.actionButton}
                         activeOpacity={0.7}
                       >
@@ -653,6 +1037,18 @@ export default function OverviewScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Comments Modal */}
+      <CommentsModal
+        visible={commentsModalVisible}
+        onClose={() => {
+          setCommentsModalVisible(false);
+          setSelectedPost(null);
+        }}
+        post={selectedPost}
+        onAddComment={handleAddComment}
+        colors={colors}
+      />
     </SafeAreaView>
   );
 }
@@ -680,6 +1076,22 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       padding: 20,
       paddingBottom: 10,
     },
+    followButtonDefault: {
+      backgroundColor: colors.primary,
+    },
+
+    followingButton: {
+      backgroundColor: colors.cardBackground,
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+
+    followButtonText: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.white,
+    },
+
     welcomeText: {
       fontSize: 16,
       color: colors.textSecondary,
@@ -784,10 +1196,6 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       fontSize: 14,
       color: colors.textSecondary,
       marginLeft: 4,
-    },
-    moreButton: {
-      padding: 8,
-      borderRadius: 20,
     },
     postText: {
       fontSize: 16,
@@ -894,6 +1302,23 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       color: colors.textSecondary,
       fontWeight: "500",
     },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginLeft: 8,
+    },
+
+    followButton: {
+      padding: 10,
+      borderRadius: 20,
+      backgroundColor: "transparent",
+      marginRight: 2,
+    },
+
+    followButtonActive: {
+      backgroundColor: colors.primary + "15",
+    },
+
     endOfPosts: {
       paddingVertical: 20,
       alignItems: "center",

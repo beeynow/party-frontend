@@ -14,19 +14,14 @@ import {
 } from "./auth-storage";
 
 export async function handleApiResponse(response: Response) {
-  let result: any;
+  const text = await response.text(); // get raw response first
+  console.log("🔍 Raw response:", text);
 
+  let result;
   try {
-    const contentType = response.headers.get("content-type");
-
-    if (contentType && contentType.includes("application/json")) {
-      result = await response.json();
-    } else {
-      const text = await response.text();
-      result = { message: text || "No response body" };
-    }
-  } catch {
-    throw new Error("Invalid JSON format");
+    result = JSON.parse(text);
+  } catch (err) {
+    throw new Error("Invalid JSON format: " + text);
   }
 
   if (!response.ok) {
@@ -655,6 +650,139 @@ export async function uploadPostAlternative(data: {
   }
 }
 
+export async function getPostsWithFollowStatus(
+  page = 1,
+  limit = 20,
+  category?: string
+) {
+  try {
+    const token = await getAuthToken();
+    const queryParams = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      ...(category && { category }),
+    });
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${IMAGES_BASE_URL}?${queryParams}`, {
+      method: "GET",
+      headers,
+    });
+
+    const result = await handleApiResponse(response);
+
+    // Transform the posts to include follow status
+    if (result.success && result.data?.images) {
+      result.data.images = result.data.images.map((image: any) => ({
+        ...image,
+        isFollowingCreator: image.isFollowingCreator || false,
+      }));
+    }
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting posts with follow status:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load posts. Please try again.",
+      data: { images: [], pagination: {} },
+    };
+  }
+}
+
+// Get user's follow status
+export async function getFollowStatus(userId: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+        isFollowing: false,
+      };
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/users/${userId}/follow-status`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting follow status:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to get follow status.",
+      data: {
+        isFollowing: false,
+        isFollowedBy: false,
+        isMutual: false,
+        isSelf: false,
+      },
+    };
+  }
+}
+
+export async function getPostWithComments(postId: string) {
+  try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${IMAGES_BASE_URL}/${postId}`, {
+      method: "GET",
+      headers,
+    });
+
+    const result = await handleApiResponse(response);
+
+    if (result.success && result.data?.image) {
+      // Ensure comments are properly formatted
+      const image = result.data.image;
+      image.comments = image.comments || [];
+      image.isFollowingCreator = image.isFollowingCreator || false;
+    }
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting post with comments:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load post details.",
+    };
+  }
+}
+
 export async function getPosts(page = 1, limit = 20, category?: string) {
   try {
     const token = await getAuthToken();
@@ -757,6 +885,143 @@ export async function likePost(postId: string) {
     return {
       success: false,
       message: error.message || "Failed to like post. Please try again.",
+    };
+  }
+}
+
+export async function commentOnPostEnhanced(postId: string, content: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    if (!content || content.trim().length === 0) {
+      return {
+        success: false,
+        message: "Comment content is required",
+      };
+    }
+
+    if (content.trim().length > 500) {
+      return {
+        success: false,
+        message: "Comment is too long. Maximum 500 characters allowed.",
+      };
+    }
+
+    console.log(`📡 Adding comment to post: ${postId}`);
+
+    const response = await fetch(`${IMAGES_BASE_URL}/${postId}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ content: content.trim() }),
+    });
+
+    const result = await handleApiResponse(response);
+    console.log("✅ Comment API result:", result);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("❌ Comment post error:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to comment. Please try again.",
+    };
+  }
+}
+
+// Batch follow/unfollow operations
+export async function batchFollowUsers(
+  userIds: string[],
+  action: "follow" | "unfollow"
+) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const results = await Promise.allSettled(
+      userIds.map((userId) =>
+        action === "follow" ? followUser(userId) : unfollowUser(userId)
+      )
+    );
+
+    const successful = results.filter(
+      (result) => result.status === "fulfilled" && result.value.success
+    ).length;
+
+    return {
+      success: successful > 0,
+      message: `${
+        action === "follow" ? "Followed" : "Unfollowed"
+      } ${successful} out of ${userIds.length} users`,
+      data: {
+        total: userIds.length,
+        successful,
+        failed: userIds.length - successful,
+      },
+    };
+  } catch (error: any) {
+    console.error(`❌ Batch ${action} error:`, error);
+    return {
+      success: false,
+      message: error.message || `Failed to ${action} users. Please try again.`,
+    };
+  }
+}
+
+// Get suggested users to follow
+export async function getSuggestedUsers(limit = 10) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+        data: { suggestions: [] },
+      };
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/suggestions/follow?limit=${limit}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting suggested users:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load suggested users.",
+      data: { suggestions: [] },
     };
   }
 }
@@ -928,6 +1193,8 @@ export async function followUser(userId: string) {
       };
     }
 
+    console.log(`📡 Following user: ${userId}`);
+
     const response = await fetch(`${SOCIAL_BASE_URL}/follow/${userId}`, {
       method: "POST",
       headers: {
@@ -937,13 +1204,14 @@ export async function followUser(userId: string) {
     });
 
     const result = await handleApiResponse(response);
+    console.log("✅ Follow API result:", result);
 
     return {
       success: true,
       ...result,
     };
   } catch (error: any) {
-    console.error("Error following user:", error);
+    console.error("❌ Follow user error:", error);
     return {
       success: false,
       message: error.message || "Failed to follow user. Please try again.",
@@ -962,6 +1230,8 @@ export async function unfollowUser(userId: string) {
       };
     }
 
+    console.log(`📡 Unfollowing user: ${userId}`);
+
     const response = await fetch(`${SOCIAL_BASE_URL}/follow/${userId}`, {
       method: "DELETE",
       headers: {
@@ -971,13 +1241,14 @@ export async function unfollowUser(userId: string) {
     });
 
     const result = await handleApiResponse(response);
+    console.log("✅ Unfollow API result:", result);
 
     return {
       success: true,
       ...result,
     };
   } catch (error: any) {
-    console.error("Error unfollowing user:", error);
+    console.error("❌ Unfollow user error:", error);
     return {
       success: false,
       message: error.message || "Failed to unfollow user. Please try again.",
@@ -1195,6 +1466,46 @@ export async function getAdminPosts(page = 1, limit = 20) {
       success: false,
       message: error.message || "Failed to load posts. Please try again.",
       data: [],
+    };
+  }
+}
+
+// Get suggested users to follow
+export async function getFollowSuggestions(limit = 10) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+        data: { suggestions: [] },
+      };
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/suggestions/follow?limit=${limit}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("Error getting follow suggestions:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load follow suggestions.",
+      data: { suggestions: [] },
     };
   }
 }
