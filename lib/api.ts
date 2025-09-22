@@ -1382,6 +1382,9 @@ export async function getFollowers(userId: string, page = 1, limit = 20) {
     );
 
     const result = await handleApiResponse(response);
+    console.log("your Followers are: ", result);
+    console.log("your Followers are: ", result);
+    console.log("your Followers are: ", result);
 
     return {
       success: true,
@@ -1417,6 +1420,8 @@ export async function getFollowing(userId: string, page = 1, limit = 20) {
     );
 
     const result = await handleApiResponse(response);
+    console.log("admin following are: ", result);
+    console.log("admin following are: ", result);
 
     return {
       success: true,
@@ -1455,6 +1460,8 @@ export async function getAdminPosts(page = 1, limit = 20) {
     );
 
     const result = await handleApiResponse(response);
+    console.log("admin posts are: ", result);
+    console.log("admin posts are: ", result);
 
     return {
       success: true,

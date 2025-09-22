@@ -556,7 +556,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       marginBottom: 16,
     },
     codeDisplay: {
-      backgroundColor: colors.background,
+      backgroundColor: colors.primary + "60",
       paddingHorizontal: 24,
       paddingVertical: 16,
       borderRadius: 16,

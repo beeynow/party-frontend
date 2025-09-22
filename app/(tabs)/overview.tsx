@@ -1310,6 +1310,7 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
 
     followButton: {
       padding: 10,
+
       borderRadius: 20,
       backgroundColor: "transparent",
       marginRight: 2,
