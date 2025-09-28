@@ -31,6 +31,42 @@ export async function handleApiResponse(response: Response) {
   return result;
 }
 
+// Fixed API functions for referral system
+
+export async function verifyReferralCode(referralCode: string) {
+  try {
+    console.log("🔍 Verifying referral code:", referralCode);
+
+    const response = await fetch(
+      `${REFERRAL_BASE_URL}/verify/${referralCode.trim().toUpperCase()}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    console.log("📡 Referral verification response status:", response.status);
+
+    const result = await handleApiResponse(response);
+    console.log("✅ Referral verification result:", result);
+
+    return {
+      valid: result.valid || false,
+      message: result.message || "Unknown error",
+      referrer: result.data?.referrer || null,
+    };
+  } catch (error: any) {
+    console.error("❌ Error verifying referral code:", error);
+    return {
+      valid: false,
+      message: error.message || "Error verifying referral code",
+      referrer: null,
+    };
+  }
+}
+
 export async function registerUser(data: {
   name: string;
   email: string;
@@ -38,27 +74,126 @@ export async function registerUser(data: {
   referralCode?: string;
 }) {
   try {
+    console.log("📤 Registration request:", {
+      name: data.name,
+      email: data.email,
+      hasPassword: !!data.password,
+      referralCode: data.referralCode || "none",
+    });
+
+    // Clean and validate referral code if provided
+    const cleanData = {
+      ...data,
+      ...(data.referralCode && {
+        referralCode: data.referralCode.trim().toUpperCase(),
+      }),
+    };
+
+    console.log("clean: ", cleanData);
+
     const response = await fetch(`${BACKEND_BASE_URL}/register`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify(cleanData),
+    });
+
+    console.log("📡 Registration response status:", response);
+
+    const result = await handleApiResponse(response);
+    console.log("✅ Registration result:", result);
+
+    return {
+      success: true,
+      message: result.message || "Registration successful!",
+      data: result.data,
+      referredBy: result.data?.referredBy || null,
+    };
+  } catch (error: any) {
+    console.error("❌ Registration Error:", error);
+
+    // Enhanced error handling for referral issues
+    let errorMessage =
+      error.message ||
+      "Network error. Please check your connection and try again.";
+
+    if (errorMessage.includes("referral")) {
+      errorMessage = "Invalid referral code. Please check and try again.";
+    } else if (errorMessage.includes("email")) {
+      errorMessage =
+        "This email is already registered. Try logging in instead.";
+    } else if (errorMessage.includes("password")) {
+      errorMessage = "Password must meet security requirements.";
+    }
+
+    return {
+      success: false,
+      message: errorMessage,
+    };
+  }
+}
+
+export async function getReferralStats() {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    console.log("📡 Fetching referral stats...");
+
+    const response = await fetch(`${REFERRAL_BASE_URL}/stats`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
     });
 
     const result = await handleApiResponse(response);
+    console.log("✅ Referral stats retrieved:", {
+      hasData: !!result.data,
+      userCode: result.data?.user?.referralCode,
+      totalReferrals: result.data?.totals?.referralCount,
+      totalCoins: result.data?.totals?.totalCoins,
+    });
+
+    // Ensure data structure consistency
+    if (result.data) {
+      // Fix referral history structure
+      if (result.data.history?.referralHistory) {
+        result.data.history.referralHistory =
+          result.data.history.referralHistory.map((ref: any) => ({
+            ...ref,
+            referredUser: ref.referredUser || {
+              name: ref.referredUserName || "Unknown User",
+              email: ref.referredUserEmail || "",
+              createdAt: ref.referredAt || new Date().toISOString(),
+            },
+          }));
+      }
+    }
 
     return {
       success: true,
       ...result,
     };
   } catch (error: any) {
-    console.error("Registration Error:", error);
+    console.error("❌ Error getting referral stats:", error);
     return {
       success: false,
-      message:
-        error.message ||
-        "Network error. Please check your connection and try again.",
+      message: error.message || "Failed to load referral data",
+      data: {
+        user: { referralCode: "" },
+        totals: { referralCount: 0, totalCoins: 0 },
+        history: { referralHistory: [] },
+        sharing: { referralLink: "", qrCodeUrl: "" },
+      },
     };
   }
 }
@@ -239,67 +374,6 @@ export async function getDashboardData() {
     };
   } catch (error: any) {
     console.error("Dashboard Error:", error);
-    return {
-      success: false,
-      message:
-        error.message ||
-        "Network error. Please check your connection and try again.",
-    };
-  }
-}
-
-// Referral API Functions
-export async function verifyReferralCode(referralCode: string) {
-  try {
-    const response = await fetch(
-      `${REFERRAL_BASE_URL}/verify/${referralCode}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    const result = await handleApiResponse(response);
-    return result;
-  } catch (error: any) {
-    console.error("Error verifying referral code:", error);
-    return {
-      valid: false,
-      message: error.message || "Error verifying referral code",
-    };
-  }
-}
-
-export async function getReferralStats() {
-  try {
-    const token = await getAuthToken();
-
-    if (!token) {
-      return {
-        success: false,
-        message: "No authentication token found. Please login again.",
-      };
-    }
-
-    const response = await fetch(`${REFERRAL_BASE_URL}/stats`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    const result = await handleApiResponse(response);
-    console.log("referral details: ", result);
-
-    return {
-      success: true,
-      ...result,
-    };
-  } catch (error: any) {
-    console.error("Error getting referral stats:", error);
     return {
       success: false,
       message:
@@ -852,6 +926,7 @@ export async function getPostDetails(postId: string) {
   }
 }
 
+// 🔥 FIXED: Frontend API call - lib/api.ts
 export async function likePost(postId: string) {
   try {
     const token = await getAuthToken();
@@ -863,7 +938,7 @@ export async function likePost(postId: string) {
       };
     }
 
-    console.log(`📡 Liking/unliking post: ${postId}`);
+    console.log(`📡 Toggling like for post: ${postId}`);
 
     const response = await fetch(`${IMAGES_BASE_URL}/${postId}/like`, {
       method: "POST",
@@ -873,18 +948,31 @@ export async function likePost(postId: string) {
       },
     });
 
+    // 🔥 FIXED: Better response handling
     const result = await handleApiResponse(response);
-    console.log("✅ Like API result:", result);
 
+    console.log("✅ Like API response:", {
+      success: result.success,
+      action: result.data?.action,
+      likeCount: result.data?.likeCount,
+      isLiked: result.data?.isLiked,
+    });
+
+    // 🔥 FIXED: Ensure consistent response format
     return {
       success: true,
-      ...result,
+      message: result.message,
+      data: {
+        action: result.data.action,
+        likeCount: parseInt(result.data.likeCount) || 0, // Ensure it's a number
+        isLiked: result.data.isLiked === true,
+      },
     };
   } catch (error: any) {
     console.error("❌ Like post error:", error);
     return {
       success: false,
-      message: error.message || "Failed to like post. Please try again.",
+      message: error.message || "Failed to toggle like. Please try again.",
     };
   }
 }

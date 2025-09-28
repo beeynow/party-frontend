@@ -345,9 +345,6 @@ export default function HelpSupportScreen() {
                   <Text style={themedStyles.resourceTitle}>
                     Video Tutorials
                   </Text>
-                  <Text style={themedStyles.resourceDescription}>
-                    Learn how to maximize your earnings
-                  </Text>
                 </View>
               </View>
               <ExternalLink color={colors.textSecondary} size={16} />
@@ -384,7 +381,7 @@ export default function HelpSupportScreen() {
                 <View style={themedStyles.resourceText}>
                   <Text style={themedStyles.resourceTitle}>Blog & Tips</Text>
                   <Text style={themedStyles.resourceDescription}>
-                    Latest updates and earning tips
+                    Latest updates
                   </Text>
                 </View>
               </View>

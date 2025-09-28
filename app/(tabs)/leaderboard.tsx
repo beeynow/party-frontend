@@ -11,7 +11,11 @@ import {
   Dimensions,
   Image,
 } from "react-native";
-import { getReferralLeaderboard, getTotalUserCount } from "@/lib/api";
+import {
+  getFollowers,
+  getReferralLeaderboard,
+  getTotalUserCount,
+} from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { useTheme } from "@/components/theme-context";
 import type { ThemeContextType } from "@/components/theme-context";
@@ -45,6 +49,17 @@ interface LeaderboardEntry {
   totalCoins: number;
 }
 
+interface AdminFollower {
+  _id: string;
+  follower: {
+    _id: string;
+    name: string;
+    email: string;
+    referralCode: string;
+  };
+  followedAt: string;
+}
+
 type AdminStats = {
   totalUsers: number;
   verifiedUsers: number;
@@ -62,7 +77,8 @@ export default function LeaderboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminFollowers, setAdminFollowers] = useState<any[]>([]);
+  const [adminFollowers, setAdminFollowers] = useState<AdminFollower[]>([]);
+  const [adminFollowersLoading, setAdminFollowersLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "leaderboard" | "dashboard" | "upload"
   >("leaderboard");
@@ -91,7 +107,10 @@ export default function LeaderboardScreen() {
 
         await fetchLeaderboard();
         if (adminStatus) {
-          await fetchAdminStats();
+          await Promise.all([
+            fetchAdminStats(),
+            fetchAdminFollowers(), // Add this line
+          ]);
         }
       } catch (error) {
         setIsAdmin(false);
@@ -102,6 +121,33 @@ export default function LeaderboardScreen() {
 
     loadUserAndData();
   }, []);
+
+  const fetchAdminFollowers = async () => {
+    try {
+      setAdminFollowersLoading(true);
+      const userData = await getUserData();
+      if (!userData?.id) return;
+
+      const result = await getFollowers(userData.id, 1, 10);
+      console.log("📊 Admin followers result:", result);
+
+      if (result.success && result.data?.followers) {
+        setAdminFollowers(result.data.followers);
+      } else {
+        console.warn("⚠️ No followers data received:", result);
+        setAdminFollowers([]);
+      }
+    } catch (error) {
+      console.error("❌ Error fetching admin followers:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load followers data",
+        variant: "destructive",
+      });
+    } finally {
+      setAdminFollowersLoading(false);
+    }
+  };
 
   const fetchAdminStats = async () => {
     try {
@@ -172,7 +218,7 @@ export default function LeaderboardScreen() {
   const onRefresh = async () => {
     await fetchLeaderboard(true);
     if (isAdmin) {
-      await fetchAdminStats();
+      await Promise.all([fetchAdminStats(), fetchAdminFollowers()]);
     }
   };
 
@@ -309,6 +355,7 @@ export default function LeaderboardScreen() {
     </View>
   );
 
+  // Update the renderAdminDashboard function to include followers section
   const renderAdminDashboard = () => (
     <View style={themedStyles.adminContainer}>
       <View style={themedStyles.pageHeader}>
@@ -390,6 +437,59 @@ export default function LeaderboardScreen() {
           </CardContent>
         </Card>
       </View>
+
+      {/* Admin Followers Section */}
+      <Card style={themedStyles.followersCard}>
+        <CardContent style={themedStyles.followersContent}>
+          <View style={themedStyles.followersHeader}>
+            <Text style={themedStyles.followersTitle}>Recent Followers</Text>
+            <Text style={themedStyles.followersCount}>
+              {adminFollowers.length} followers
+            </Text>
+          </View>
+
+          {adminFollowersLoading ? (
+            <View style={themedStyles.followersLoading}>
+              <Text style={themedStyles.loadingText}>Loading followers...</Text>
+            </View>
+          ) : adminFollowers.length > 0 ? (
+            <View style={themedStyles.followersList}>
+              {adminFollowers.slice(0, 5).map((followerData) => (
+                <View key={followerData._id} style={themedStyles.followerItem}>
+                  <View style={themedStyles.followerAvatar}>
+                    <Text style={themedStyles.followerInitial}>
+                      {followerData.follower.name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={themedStyles.followerInfo}>
+                    <Text style={themedStyles.followerName}>
+                      {followerData.follower.name}
+                    </Text>
+                    <Text style={themedStyles.followerCode}>
+                      @{followerData.follower.referralCode}
+                    </Text>
+                  </View>
+                  <Text style={themedStyles.followedTime}>
+                    {new Date(followerData.followedAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              ))}
+              {adminFollowers.length > 5 && (
+                <TouchableOpacity style={themedStyles.viewAllButton}>
+                  <Text style={themedStyles.viewAllText}>
+                    View all {adminFollowers.length} followers
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <View style={themedStyles.noFollowers}>
+              <Users color={colors.textSecondary} size={32} />
+              <Text style={themedStyles.noFollowersText}>No followers yet</Text>
+            </View>
+          )}
+        </CardContent>
+      </Card>
 
       <View style={themedStyles.quickActions}>
         <TouchableOpacity style={themedStyles.actionButton}>
@@ -562,6 +662,100 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
     activeTab: {
       borderBottomWidth: 2,
       borderBottomColor: colors.primary,
+    },
+    followersCard: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 20,
+      marginBottom: 24,
+      elevation: 2,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    },
+    followersContent: {
+      padding: 20,
+    },
+    followersHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 16,
+    },
+    followersTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    followersCount: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: "500",
+    },
+    followersLoading: {
+      alignItems: "center",
+      paddingVertical: 20,
+    },
+    followersList: {
+      gap: 12,
+    },
+    followerItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 8,
+    },
+    followerAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.primary + "20",
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 12,
+    },
+    followerInitial: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.primary,
+    },
+    followerInfo: {
+      flex: 1,
+    },
+    followerName: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    followerCode: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    followedTime: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    viewAllButton: {
+      alignItems: "center",
+      paddingVertical: 12,
+      marginTop: 8,
+      backgroundColor: colors.background,
+      borderRadius: 12,
+    },
+    viewAllText: {
+      fontSize: 14,
+      color: colors.primary,
+      fontWeight: "500",
+    },
+    noFollowers: {
+      alignItems: "center",
+      paddingVertical: 30,
+      gap: 8,
+    },
+    noFollowersText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: "500",
     },
     tabText: {
       fontSize: 14,

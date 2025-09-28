@@ -355,7 +355,7 @@ export default function ReferralsScreen() {
             </View>
             <Text style={themedStyles.emptyTitle}>No referrals yet</Text>
             <Text style={themedStyles.emptyDescription}>
-              Start sharing your code to see your earnings and referrals here!
+              Start sharing your code to see your coins and referrals here!
             </Text>
             <TouchableOpacity
               style={themedStyles.emptyAction}

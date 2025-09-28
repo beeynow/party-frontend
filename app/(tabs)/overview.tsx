@@ -575,17 +575,30 @@ export default function OverviewScreen() {
     }
   };
 
+  // 🔥 FIXED: Frontend Like Handler - app/(tabs)/overview.tsx
   const handleLike = async (postId: string) => {
-    // Optimistic update
+    // Find current post state
+    const currentPost = posts.find((p) => p._id === postId);
+    if (!currentPost) {
+      console.error("❌ Post not found for like toggle:", postId);
+      return;
+    }
+
+    const wasLiked = currentPost.isLikedByUser;
+    const currentCount = currentPost.likeCount;
+
+    console.log(
+      `💝 Handling like: Post ${postId}, was liked: ${wasLiked}, current count: ${currentCount}`
+    );
+
+    // 🔥 FIXED: Optimistic update with proper state management
     setPosts((prevPosts) =>
       prevPosts.map((post) =>
         post._id === postId
           ? {
               ...post,
-              isLikedByUser: !post.isLikedByUser,
-              likeCount: post.isLikedByUser
-                ? post.likeCount - 1
-                : post.likeCount + 1,
+              isLikedByUser: !wasLiked,
+              likeCount: wasLiked ? currentCount - 1 : currentCount + 1,
             }
           : post
       )
@@ -593,10 +606,10 @@ export default function OverviewScreen() {
 
     try {
       const result = await likePost(postId);
-      console.log("🔥 Like result:", result);
+      console.log("💝 Like result received:", result);
 
-      if (result.success) {
-        // Update with server response
+      if (result.success && result.data) {
+        // 🔥 FIXED: Update with server response (not optimistic)
         setPosts((prevPosts) =>
           prevPosts.map((post) =>
             post._id === postId
@@ -611,25 +624,23 @@ export default function OverviewScreen() {
 
         toast({
           title: "Success",
-          description: result.data.isLiked ? "Post liked!" : "Post unliked!",
+          description: result.data.isLiked ? "Post liked! ❤️" : "Post unliked",
           variant: "success",
         });
       } else {
         throw new Error(result.message || "Failed to update like");
       }
     } catch (error: any) {
-      console.error("❌ Like error:", error);
+      console.error("❌ Like error, reverting optimistic update:", error);
 
-      // Revert optimistic update on error
+      // 🔥 FIXED: Revert optimistic update on error
       setPosts((prevPosts) =>
         prevPosts.map((post) =>
           post._id === postId
             ? {
                 ...post,
-                isLikedByUser: !post.isLikedByUser,
-                likeCount: post.isLikedByUser
-                  ? post.likeCount + 1
-                  : post.likeCount - 1,
+                isLikedByUser: wasLiked, // Revert to original state
+                likeCount: currentCount, // Revert to original count
               }
             : post
         )
