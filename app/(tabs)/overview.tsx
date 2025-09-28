@@ -22,6 +22,8 @@ import {
   commentOnPost,
   followUser,
   unfollowUser,
+  getPostWithComments,
+  likeComment,
 } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { useTheme } from "@/components/theme-context";
@@ -43,6 +45,8 @@ import {
   UserPlus,
   UserMinus,
   UserCheck,
+  ArrowLeft,
+  Reply,
 } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -52,7 +56,7 @@ import {
   getUserData,
 } from "@/lib/auth-storage";
 
-const { width: screenWidth } = Dimensions.get("window");
+const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 interface Comment {
   _id: string;
@@ -66,6 +70,9 @@ interface Comment {
   content: string;
   createdAt: string;
   likeCount: number;
+  isLikedByUser?: boolean;
+  replies?: Comment[];
+  parentComment?: string;
 }
 
 interface Post {
@@ -99,158 +106,301 @@ interface UserData {
   referralCount: number;
 }
 
-interface CommentsModalProps {
+interface FullPostModalProps {
   visible: boolean;
   onClose: () => void;
   post: Post | null;
-  onAddComment: (postId: string, content: string) => Promise<void>;
+  onPostUpdate: (postId: string, updates: Partial<Post>) => void;
+  currentUserId: string | null;
   colors: ThemeContextType["colors"];
 }
 
-const CommentsModal = ({
+const FullPostModal = ({
   visible,
   onClose,
-  post,
-  onAddComment,
+  post: initialPost,
+  onPostUpdate,
+  currentUserId,
   colors,
-}: CommentsModalProps) => {
+}: FullPostModalProps) => {
+  const [post, setPost] = useState<Post | null>(initialPost);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const { toast } = useToast();
 
-  const handleSubmit = async () => {
-    if (!newComment.trim() || !post) return;
+  useEffect(() => {
+    if (visible && initialPost) {
+      setPost(initialPost);
+      loadFullPost();
+    }
+  }, [visible, initialPost]);
+
+  const loadFullPost = async () => {
+    if (!initialPost) return;
+    setLoading(true);
+    try {
+      const result = await getPostWithComments(initialPost._id);
+      if (result.success && result.data?.image) {
+        const fullPost = result.data.image;
+        setPost(fullPost);
+        setComments(fullPost.comments || []);
+      }
+    } catch (error) {
+      console.error("Failed to load full post:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLike = async () => {
+    if (!post) return;
+
+    const wasLiked = post.isLikedByUser;
+    const newLikeCount = wasLiked ? post.likeCount - 1 : post.likeCount + 1;
+
+    // Optimistic update
+    setPost((prev) =>
+      prev
+        ? {
+            ...prev,
+            isLikedByUser: !wasLiked,
+            likeCount: newLikeCount,
+          }
+        : null
+    );
+
+    try {
+      const result = await likePost(post._id);
+      if (result.success) {
+        const updatedPost = {
+          ...post,
+          isLikedByUser: result.data?.isLiked,
+          likeCount: result.data?.likeCount,
+        };
+        setPost(updatedPost);
+        onPostUpdate(post._id, updatedPost);
+      } else {
+        // Revert on failure
+        setPost((prev) =>
+          prev
+            ? {
+                ...prev,
+                isLikedByUser: wasLiked,
+                likeCount: post.likeCount,
+              }
+            : null
+        );
+      }
+    } catch (error: any) {
+      // Revert on error
+      setPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              isLikedByUser: wasLiked,
+              likeCount: post.likeCount,
+            }
+          : null
+      );
+      toast({
+        title: "Error",
+        description: "Failed to update like",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleFollow = async () => {
+    if (!post || !currentUserId) return;
+
+    const wasFollowing = post.isFollowingCreator;
+
+    // Optimistic update
+    setPost((prev) =>
+      prev
+        ? {
+            ...prev,
+            isFollowingCreator: !wasFollowing,
+          }
+        : null
+    );
+
+    try {
+      const result = wasFollowing
+        ? await unfollowUser(post.createdBy._id)
+        : await followUser(post.createdBy._id);
+
+      if (result.success) {
+        const updatedPost = {
+          ...post,
+          isFollowingCreator: !wasFollowing,
+        };
+        setPost(updatedPost);
+        onPostUpdate(post._id, updatedPost);
+      } else {
+        // Revert on failure
+        setPost((prev) =>
+          prev
+            ? {
+                ...prev,
+                isFollowingCreator: wasFollowing,
+              }
+            : null
+        );
+      }
+    } catch (error: any) {
+      // Revert on error
+      setPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              isFollowingCreator: wasFollowing,
+            }
+          : null
+      );
+      toast({
+        title: "Error",
+        description: "Failed to update follow status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !post || submitting) return;
 
     setSubmitting(true);
     try {
-      await onAddComment(post._id, newComment.trim());
-      setNewComment("");
-    } catch (error) {
-      console.error("Failed to add comment:", error);
+      const result = await commentOnPost(post._id, newComment.trim());
+      if (result.success) {
+        const newCommentObj: Comment = {
+          _id: result.data?.comment?._id || Date.now().toString(),
+          user: {
+            _id: currentUserId || "",
+            name: "You",
+            email: "",
+          },
+          userName: "You",
+          userEmail: "",
+          content: newComment.trim(),
+          createdAt: new Date().toISOString(),
+          likeCount: 0,
+          isLikedByUser: false,
+          replies: [],
+        };
+
+        setComments((prev) => [...prev, newCommentObj]);
+        setNewComment("");
+
+        // Update post comment count
+        const updatedPost = {
+          ...post,
+          commentCount: (post.commentCount || 0) + 1,
+        };
+        setPost(updatedPost);
+        onPostUpdate(post._id, { commentCount: updatedPost.commentCount });
+
+        toast({
+          title: "Success",
+          description: "Comment added successfully!",
+          variant: "success",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add comment",
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const getModalStyles = (colors: ThemeContextType["colors"]) =>
-    StyleSheet.create({
-      modalContainer: {
-        flex: 1,
-        backgroundColor: colors.background,
-      },
-      modalHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-      },
-      modalTitle: {
-        fontSize: 18,
-        fontWeight: "600",
-        color: colors.textPrimary,
-      },
-      closeButton: {
-        padding: 8,
-        borderRadius: 20,
-      },
-      commentsList: {
-        flex: 1,
-      },
-      commentsContent: {
-        padding: 16,
-      },
-      commentItem: {
-        flexDirection: "row",
-        marginBottom: 16,
-      },
-      commentAvatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: colors.primary + "22",
-        justifyContent: "center",
-        alignItems: "center",
-        marginRight: 12,
-      },
-      commentAvatarText: {
-        fontSize: 16,
-        fontWeight: "600",
-        color: colors.primary,
-      },
-      commentContent: {
-        flex: 1,
-      },
-      commentHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        marginBottom: 4,
-      },
-      commentAuthor: {
-        fontSize: 15,
-        fontWeight: "600",
-        color: colors.textPrimary,
-      },
-      commentTime: {
-        fontSize: 12,
-        color: colors.textSecondary,
-      },
-      commentText: {
-        fontSize: 14,
-        color: colors.textPrimary,
-        lineHeight: 20,
-      },
-      emptyComments: {
-        alignItems: "center",
-        marginTop: 40,
-      },
-      emptyCommentsText: {
-        fontSize: 16,
-        fontWeight: "600",
-        color: colors.textPrimary,
-        marginTop: 12,
-      },
-      emptyCommentsSubtext: {
-        fontSize: 14,
-        color: colors.textSecondary,
-        marginTop: 4,
-        textAlign: "center",
-      },
-      commentInputContainer: {
-        borderTopWidth: 1,
-        borderTopColor: colors.border,
-        padding: 12,
-      },
-      commentInputWrapper: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: colors.cardBackground,
-        borderRadius: 24,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-      },
-      commentInput: {
-        flex: 1,
-        fontSize: 14,
-        color: colors.textPrimary,
-        paddingVertical: 6,
-      },
-      sendButton: {
-        marginLeft: 8,
-        padding: 8,
-        borderRadius: 20,
-        backgroundColor: colors.primary,
-      },
-      sendButtonDisabled: {
-        backgroundColor: colors.border,
-      },
-      characterCount: {
-        fontSize: 12,
-        color: colors.textSecondary,
-        textAlign: "right",
-        marginTop: 4,
-      },
-    });
+  const handleLikeComment = async (commentId: string) => {
+    try {
+      setComments((prev) =>
+        prev.map((comment) =>
+          comment._id === commentId
+            ? {
+                ...comment,
+                isLikedByUser: !comment.isLikedByUser,
+                likeCount: comment.isLikedByUser
+                  ? (comment.likeCount || 0) - 1
+                  : (comment.likeCount || 0) + 1,
+              }
+            : comment
+        )
+      );
+
+      // Here you would call your API to like the comment
+      // const result = await likeComment(commentId);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "Failed to like comment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleReply = (commentId: string) => {
+    setReplyingTo(commentId);
+  };
+
+  const submitReply = async () => {
+    if (!replyText.trim() || !replyingTo || !post) return;
+
+    try {
+      // Here you would call your API to add a reply
+      // For now, we'll add it locally
+      const newReply: Comment = {
+        _id: Date.now().toString(),
+        user: {
+          _id: currentUserId || "",
+          name: "You",
+          email: "",
+        },
+        userName: "You",
+        userEmail: "",
+        content: replyText.trim(),
+        createdAt: new Date().toISOString(),
+        likeCount: 0,
+        isLikedByUser: false,
+        parentComment: replyingTo,
+      };
+
+      setComments((prev) =>
+        prev.map((comment) =>
+          comment._id === replyingTo
+            ? {
+                ...comment,
+                replies: [...(comment.replies || []), newReply],
+              }
+            : comment
+        )
+      );
+
+      setReplyText("");
+      setReplyingTo(null);
+
+      toast({
+        title: "Success",
+        description: "Reply added successfully!",
+        variant: "success",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "Failed to add reply",
+        variant: "destructive",
+      });
+    }
+  };
 
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -264,93 +414,322 @@ const CommentsModal = ({
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
   };
 
-  const themedModalStyles = getModalStyles(colors);
+  const renderComment = ({ item: comment }: { item: Comment }) => (
+    <View style={getModalStyles(colors).commentContainer}>
+      <View style={getModalStyles(colors).commentItem}>
+        <View style={getModalStyles(colors).commentAvatar}>
+          <Text style={getModalStyles(colors).commentAvatarText}>
+            {comment.userName?.charAt(0).toUpperCase() || "?"}
+          </Text>
+        </View>
+        <View style={getModalStyles(colors).commentContent}>
+          <View style={getModalStyles(colors).commentHeader}>
+            <Text style={getModalStyles(colors).commentAuthor}>
+              {comment.userName}
+            </Text>
+            <Text style={getModalStyles(colors).commentTime}>
+              {formatTimeAgo(comment.createdAt)}
+            </Text>
+          </View>
+          <Text style={getModalStyles(colors).commentText}>
+            {comment.content}
+          </Text>
+
+          <View style={getModalStyles(colors).commentActions}>
+            <TouchableOpacity
+              style={getModalStyles(colors).commentAction}
+              onPress={() => handleLikeComment(comment._id)}
+            >
+              <Heart
+                color={
+                  comment.isLikedByUser ? colors.red : colors.textSecondary
+                }
+                size={14}
+                fill={comment.isLikedByUser ? colors.red : "transparent"}
+              />
+              {(comment.likeCount || 0) > 0 && (
+                <Text style={getModalStyles(colors).commentActionText}>
+                  {comment.likeCount}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={getModalStyles(colors).commentAction}
+              onPress={() => handleReply(comment._id)}
+            >
+              <Reply color={colors.textSecondary} size={14} />
+              <Text style={getModalStyles(colors).commentActionText}>
+                Reply
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Reply input for this comment */}
+          {replyingTo === comment._id && (
+            <View style={getModalStyles(colors).replyInput}>
+              <TextInput
+                style={getModalStyles(colors).replyTextInput}
+                placeholder="Write a reply..."
+                placeholderTextColor={colors.textSecondary}
+                value={replyText}
+                onChangeText={setReplyText}
+                multiline
+                maxLength={300}
+              />
+              <View style={getModalStyles(colors).replyActions}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setReplyingTo(null);
+                    setReplyText("");
+                  }}
+                  style={getModalStyles(colors).replyCancel}
+                >
+                  <Text style={getModalStyles(colors).replyCancelText}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={submitReply}
+                  disabled={!replyText.trim()}
+                  style={[
+                    getModalStyles(colors).replySubmit,
+                    !replyText.trim() &&
+                      getModalStyles(colors).replySubmitDisabled,
+                  ]}
+                >
+                  <Text style={getModalStyles(colors).replySubmitText}>
+                    Reply
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Render replies */}
+          {comment.replies && comment.replies.length > 0 && (
+            <View style={getModalStyles(colors).repliesContainer}>
+              {comment.replies.map((reply) => (
+                <View key={reply._id} style={getModalStyles(colors).replyItem}>
+                  <View style={getModalStyles(colors).replyAvatar}>
+                    <Text style={getModalStyles(colors).replyAvatarText}>
+                      {reply.userName?.charAt(0).toUpperCase() || "?"}
+                    </Text>
+                  </View>
+                  <View style={getModalStyles(colors).replyContent}>
+                    <View style={getModalStyles(colors).replyHeader}>
+                      <Text style={getModalStyles(colors).replyAuthor}>
+                        {reply.userName}
+                      </Text>
+                      <Text style={getModalStyles(colors).replyTime}>
+                        {formatTimeAgo(reply.createdAt)}
+                      </Text>
+                    </View>
+                    <Text style={getModalStyles(colors).replyText}>
+                      {reply.content}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+
+  if (!post) return null;
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
-      presentationStyle="pageSheet"
+      presentationStyle="fullScreen"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={themedModalStyles.modalContainer}>
+      <SafeAreaView style={getModalStyles(colors).modalContainer}>
         {/* Header */}
-        <View style={themedModalStyles.modalHeader}>
-          <Text style={themedModalStyles.modalTitle}>
-            Comments ({post?.commentCount || 0})
-          </Text>
+        <View style={getModalStyles(colors).header}>
           <TouchableOpacity
             onPress={onClose}
-            style={themedModalStyles.closeButton}
+            style={getModalStyles(colors).backButton}
           >
-            <X color={colors.textPrimary} size={24} />
+            <ArrowLeft color={colors.textPrimary} size={24} />
+          </TouchableOpacity>
+          <Text style={getModalStyles(colors).headerTitle}>Post</Text>
+          <TouchableOpacity style={getModalStyles(colors).moreButton}>
+            <MoreHorizontal color={colors.textPrimary} size={24} />
           </TouchableOpacity>
         </View>
 
-        {/* Comments List */}
-        <FlatList
-          data={post?.comments || []}
-          keyExtractor={(item) => item._id}
-          style={themedModalStyles.commentsList}
-          contentContainerStyle={themedModalStyles.commentsContent}
-          renderItem={({ item: comment }) => (
-            <View style={themedModalStyles.commentItem}>
-              <View style={themedModalStyles.commentAvatar}>
-                <Text style={themedModalStyles.commentAvatarText}>
-                  {comment.userName?.charAt(0).toUpperCase() || "?"}
+        <ScrollView
+          style={getModalStyles(colors).content}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Post Header */}
+          <View style={getModalStyles(colors).postHeader}>
+            <View style={getModalStyles(colors).authorInfo}>
+              <View style={getModalStyles(colors).authorAvatar}>
+                <Text style={getModalStyles(colors).authorInitial}>
+                  {post.createdBy.name?.charAt(0).toUpperCase() || "?"}
                 </Text>
               </View>
-              <View style={themedModalStyles.commentContent}>
-                <View style={themedModalStyles.commentHeader}>
-                  <Text style={themedModalStyles.commentAuthor}>
-                    {comment.userName}
+              <View style={getModalStyles(colors).authorText}>
+                <View style={getModalStyles(colors).authorNameRow}>
+                  <Text style={getModalStyles(colors).authorName}>
+                    {post.createdBy.name}
                   </Text>
-                  <Text style={themedModalStyles.commentTime}>
-                    {formatTimeAgo(comment.createdAt)}
+                  <ShieldCheck color={colors.primary} size={16} />
+                </View>
+                <View style={getModalStyles(colors).timestampContainer}>
+                  <Text style={getModalStyles(colors).username}>
+                    @{post.createdBy.referralCode || "user"}
+                  </Text>
+                  <Text style={getModalStyles(colors).timestamp}>
+                    • {formatTimeAgo(post.createdAt)}
                   </Text>
                 </View>
-                <Text style={themedModalStyles.commentText}>
-                  {comment.content}
-                </Text>
               </View>
             </View>
+
+            {/* Follow Button */}
+            {currentUserId && currentUserId !== post.createdBy._id && (
+              <TouchableOpacity
+                onPress={handleFollow}
+                style={[
+                  getModalStyles(colors).followButton,
+                  post.isFollowingCreator
+                    ? getModalStyles(colors).followingButton
+                    : getModalStyles(colors).followButtonDefault,
+                ]}
+              >
+                <Text
+                  style={[
+                    getModalStyles(colors).followButtonText,
+                    post.isFollowingCreator && { color: colors.primary },
+                  ]}
+                >
+                  {post.isFollowingCreator ? "Following" : "Follow"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Post Content */}
+          {post.content && (
+            <Text style={getModalStyles(colors).postText}>{post.content}</Text>
           )}
-          ListEmptyComponent={
-            <View style={themedModalStyles.emptyComments}>
-              <MessageCircle color={colors.textSecondary} size={48} />
-              <Text style={themedModalStyles.emptyCommentsText}>
-                No comments yet
+
+          {/* Post Image */}
+          <Image
+            source={{ uri: post.url }}
+            style={getModalStyles(colors).postImage}
+            resizeMode="contain"
+          />
+
+          {/* Engagement Stats */}
+          <View style={getModalStyles(colors).engagementStats}>
+            <Text style={getModalStyles(colors).statText}>
+              {post.likeCount} likes • {post.commentCount} comments •{" "}
+              {post.views} views
+            </Text>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={getModalStyles(colors).actionButtons}>
+            <TouchableOpacity
+              onPress={handleLike}
+              style={getModalStyles(colors).actionButton}
+            >
+              <Heart
+                color={post.isLikedByUser ? colors.red : colors.textSecondary}
+                size={24}
+                fill={post.isLikedByUser ? colors.red : "transparent"}
+              />
+              <Text
+                style={[
+                  getModalStyles(colors).actionText,
+                  post.isLikedByUser && { color: colors.red },
+                ]}
+              >
+                {post.likeCount}
               </Text>
-              <Text style={themedModalStyles.emptyCommentsSubtext}>
-                Be the first to share your thoughts!
+            </TouchableOpacity>
+
+            <TouchableOpacity style={getModalStyles(colors).actionButton}>
+              <MessageCircle color={colors.textSecondary} size={24} />
+              <Text style={getModalStyles(colors).actionText}>
+                {post.commentCount}
               </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={getModalStyles(colors).actionButton}>
+              <ExternalLink color={colors.textSecondary} size={24} />
+            </TouchableOpacity>
+
+            <View style={getModalStyles(colors).viewsContainer}>
+              <Eye color={colors.textSecondary} size={20} />
+              <Text style={getModalStyles(colors).viewsText}>{post.views}</Text>
             </View>
-          }
-          showsVerticalScrollIndicator={false}
-        />
+          </View>
+
+          {/* Comments Section */}
+          <View style={getModalStyles(colors).commentsSection}>
+            <Text style={getModalStyles(colors).commentsTitle}>
+              Comments ({comments.length})
+            </Text>
+
+            {loading ? (
+              <View style={getModalStyles(colors).loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : comments.length > 0 ? (
+              <FlatList
+                data={comments}
+                keyExtractor={(item) => item._id}
+                renderItem={renderComment}
+                scrollEnabled={false}
+                ItemSeparatorComponent={() => (
+                  <View style={getModalStyles(colors).commentSeparator} />
+                )}
+              />
+            ) : (
+              <View style={getModalStyles(colors).emptyComments}>
+                <MessageCircle color={colors.textSecondary} size={48} />
+                <Text style={getModalStyles(colors).emptyCommentsText}>
+                  No comments yet
+                </Text>
+                <Text style={getModalStyles(colors).emptyCommentsSubtext}>
+                  Be the first to share your thoughts!
+                </Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
 
         {/* Comment Input */}
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={themedModalStyles.commentInputContainer}
+          style={getModalStyles(colors).commentInputContainer}
         >
-          <View style={themedModalStyles.commentInputWrapper}>
+          <View style={getModalStyles(colors).commentInputWrapper}>
             <TextInput
-              style={themedModalStyles.commentInput}
+              style={getModalStyles(colors).commentInput}
               placeholder="Write a comment..."
               placeholderTextColor={colors.textSecondary}
               value={newComment}
               onChangeText={setNewComment}
               multiline
               maxLength={500}
+              editable={!submitting}
             />
             <TouchableOpacity
-              onPress={handleSubmit}
+              onPress={handleAddComment}
               disabled={!newComment.trim() || submitting}
               style={[
-                themedModalStyles.sendButton,
+                getModalStyles(colors).sendButton,
                 (!newComment.trim() || submitting) &&
-                  themedModalStyles.sendButtonDisabled,
+                  getModalStyles(colors).sendButtonDisabled,
               ]}
             >
               {submitting ? (
@@ -358,16 +737,14 @@ const CommentsModal = ({
               ) : (
                 <Send
                   color={
-                    newComment.trim() && !submitting
-                      ? colors.white
-                      : colors.textSecondary
+                    newComment.trim() ? colors.white : colors.textSecondary
                   }
                   size={20}
                 />
               )}
             </TouchableOpacity>
           </View>
-          <Text style={themedModalStyles.characterCount}>
+          <Text style={getModalStyles(colors).characterCount}>
             {newComment.length}/500
           </Text>
         </KeyboardAvoidingView>
@@ -384,7 +761,7 @@ export default function OverviewScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [commentsModalVisible, setCommentsModalVisible] = useState(false);
+  const [fullPostModalVisible, setFullPostModalVisible] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -429,19 +806,11 @@ export default function OverviewScreen() {
   };
 
   const fetchPosts = async (pageNum = 1, isRefresh = false) => {
-    // 🚀 INSTANT: Load from cache first (only for initial load)
+    // Load from cache first for instant display
     if (pageNum === 1 && !isRefresh && posts.length === 0) {
       try {
-        console.log("🔍 Checking cache for instant load...");
         const cachedPosts = await getPostsCache();
-
         if (cachedPosts?.posts && cachedPosts.posts.length > 0) {
-          console.log(
-            "⚡ Found cached posts, loading instantly:",
-            cachedPosts.posts.length
-          );
-
-          // Transform cached data to match expected format
           const transformedPosts = cachedPosts.posts.map((image: any) => ({
             _id: image._id,
             createdBy: {
@@ -465,20 +834,16 @@ export default function OverviewScreen() {
           }));
 
           setPosts(transformedPosts);
-          setLoading(false); // Stop loading spinner immediately
-          console.log("✅ Posts loaded from cache instantly");
-        } else {
-          console.log("📭 No cached posts found, will load from API");
+          setLoading(false);
         }
       } catch (error) {
-        console.log("❌ Cache load failed:", error);
+        console.log("Cache load failed:", error);
       }
     }
 
     if (pageNum > 1) setLoadingMore(true);
 
     try {
-      console.log(`📡 Fetching posts from API - page ${pageNum}`);
       const postsResult = await getPosts(pageNum, 10);
 
       if (postsResult.success && postsResult.data?.images) {
@@ -506,9 +871,7 @@ export default function OverviewScreen() {
 
         if (isRefresh || pageNum === 1) {
           setPosts(newPosts);
-          // 🔥 CACHE: Save fresh data for next instant load
           if (pageNum === 1) {
-            console.log("💾 Caching fresh posts for next time");
             await savePostsCache(newPosts, pageNum);
           }
         } else {
@@ -516,20 +879,13 @@ export default function OverviewScreen() {
         }
 
         setHasMore(postsResult.data.pagination?.hasMore || false);
-        console.log(`✅ API posts loaded - page ${pageNum}`);
       } else {
         if (pageNum === 1) {
           setPosts([]);
         }
-        if (pageNum === 1) {
-          toast({
-            title: "Info",
-            description: "No posts found",
-          });
-        }
       }
     } catch (error: any) {
-      console.error("❌ API Error:", error.message);
+      console.error("API Error:", error.message);
       toast({
         title: "Error",
         description: error.message || "Failed to load posts",
@@ -537,33 +893,22 @@ export default function OverviewScreen() {
       });
     } finally {
       if (pageNum > 1) setLoadingMore(false);
-      setLoading(false); // Ensure loading is stopped
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     const loadData = async () => {
-      console.log("🚀 Starting app load...");
-
-      // Start both simultaneously - don't wait for one to finish
       const dashboardPromise = fetchDashboardData();
       const postsPromise = fetchPosts(1);
-
-      // Let them run in parallel
       await Promise.allSettled([dashboardPromise, postsPromise]);
-
-      console.log("✅ App load complete");
     };
-
     loadData();
   }, []);
 
   const onRefresh = async () => {
     setPage(1);
-    // Clear cache to force fresh data
     await clearPostsCache();
-
-    // Parallel refresh
     await Promise.all([fetchDashboardData(true), fetchPosts(1, true)]);
   };
 
@@ -575,132 +920,72 @@ export default function OverviewScreen() {
     }
   };
 
-  // 🔥 FIXED: Frontend Like Handler - app/(tabs)/overview.tsx
   const handleLike = async (postId: string) => {
-    // Find current post state
-    const currentPost = posts.find((p) => p._id === postId);
-    if (!currentPost) {
-      console.error("❌ Post not found for like toggle:", postId);
-      return;
-    }
+    const post = posts.find((p) => p._id === postId);
+    if (!post) return;
 
-    const wasLiked = currentPost.isLikedByUser;
-    const currentCount = currentPost.likeCount;
+    const wasLiked = post.isLikedByUser;
+    const newLikeCount = wasLiked ? post.likeCount - 1 : post.likeCount + 1;
 
-    console.log(
-      `💝 Handling like: Post ${postId}, was liked: ${wasLiked}, current count: ${currentCount}`
-    );
-
-    // 🔥 FIXED: Optimistic update with proper state management
+    // Optimistic update
     setPosts((prevPosts) =>
-      prevPosts.map((post) =>
-        post._id === postId
+      prevPosts.map((p) =>
+        p._id === postId
           ? {
-              ...post,
+              ...p,
               isLikedByUser: !wasLiked,
-              likeCount: wasLiked ? currentCount - 1 : currentCount + 1,
+              likeCount: newLikeCount,
             }
-          : post
+          : p
       )
     );
 
     try {
       const result = await likePost(postId);
-      console.log("💝 Like result received:", result);
 
-      if (result.success && result.data) {
-        // 🔥 FIXED: Update with server response (not optimistic)
+      if (result.success) {
         setPosts((prevPosts) =>
-          prevPosts.map((post) =>
-            post._id === postId
+          prevPosts.map((p) =>
+            p._id === postId
               ? {
-                  ...post,
-                  isLikedByUser: result.data.isLiked,
-                  likeCount: result.data.likeCount,
+                  ...p,
+                  isLikedByUser: result.data?.isLiked,
+                  likeCount: result.data?.likeCount,
                 }
-              : post
+              : p
           )
         );
-
-        toast({
-          title: "Success",
-          description: result.data.isLiked ? "Post liked! ❤️" : "Post unliked",
-          variant: "success",
-        });
       } else {
-        throw new Error(result.message || "Failed to update like");
+        // Revert on failure
+        setPosts((prevPosts) =>
+          prevPosts.map((p) =>
+            p._id === postId
+              ? {
+                  ...p,
+                  isLikedByUser: wasLiked,
+                  likeCount: post.likeCount,
+                }
+              : p
+          )
+        );
       }
     } catch (error: any) {
-      console.error("❌ Like error, reverting optimistic update:", error);
-
-      // 🔥 FIXED: Revert optimistic update on error
+      // Revert on error
       setPosts((prevPosts) =>
-        prevPosts.map((post) =>
-          post._id === postId
+        prevPosts.map((p) =>
+          p._id === postId
             ? {
-                ...post,
-                isLikedByUser: wasLiked, // Revert to original state
-                likeCount: currentCount, // Revert to original count
+                ...p,
+                isLikedByUser: wasLiked,
+                likeCount: post.likeCount,
               }
-            : post
+            : p
         )
       );
 
       toast({
         title: "Error",
         description: error.message || "Failed to update like",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleComment = (post: Post) => {
-    setSelectedPost(post);
-    setCommentsModalVisible(true);
-  };
-
-  const handleAddComment = async (postId: string, content: string) => {
-    try {
-      console.log("💬 Adding comment:", { postId, text: content.trim() });
-      const result = await commentOnPost(postId, content.trim());
-      console.log("💬 Comment result:", result);
-
-      if (result.success) {
-        // Update post with new comment count
-        setPosts((prevPosts) =>
-          prevPosts.map((post) =>
-            post._id === postId
-              ? {
-                  ...post,
-                  commentCount: result.data.commentCount,
-                }
-              : post
-          )
-        );
-
-        // Update selected post for modal
-        setSelectedPost((prevPost) =>
-          prevPost && prevPost._id === postId
-            ? {
-                ...prevPost,
-                commentCount: result.data.commentCount,
-              }
-            : prevPost
-        );
-
-        toast({
-          title: "Success",
-          description: "Comment added successfully!",
-          variant: "success",
-        });
-      } else {
-        throw new Error(result.message || "Failed to add comment");
-      }
-    } catch (error: any) {
-      console.error("❌ Comment error:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to add comment",
         variant: "destructive",
       });
     }
@@ -753,67 +1038,17 @@ export default function OverviewScreen() {
     }
   };
 
-  const handleShare = async (postId: string) => {
-    try {
-      const post = posts.find((p) => p._id === postId);
-      if (!post) return;
-
-      const postUrl = `${
-        process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:3000"
-      }/posts/${postId}`;
-
-      const { Share } = require("react-native");
-
-      await Share.share({
-        message: `Check out this post: ${
-          post.content || "Amazing post!"
-        }\n\n${postUrl}`,
-        url: postUrl, // iOS only
-        title: "Share Post",
-      });
-
-      toast({
-        title: "Shared",
-        description: "Post shared successfully!",
-        variant: "success",
-      });
-    } catch (error: any) {
-      console.error("❌ Share error:", error);
-
-      // Fallback: Copy to clipboard
-      try {
-        const { Clipboard } = require("@react-native-clipboard/clipboard");
-        const post = posts.find((p) => p._id === postId);
-        const postUrl = `${
-          process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:3000"
-        }/posts/${postId}`;
-
-        await Clipboard.setString(
-          `Check out this post: ${
-            post?.content || "Amazing post!"
-          }\n\n${postUrl}`
-        );
-
-        toast({
-          title: "Copied",
-          description: "Post link copied to clipboard!",
-          variant: "success",
-        });
-      } catch (clipboardError) {
-        console.error("❌ Clipboard error:", clipboardError);
-        toast({
-          title: "Info",
-          description: "Share feature coming soon!",
-        });
-      }
-    }
+  const handleOpenFullPost = (post: Post) => {
+    setSelectedPost(post);
+    setFullPostModalVisible(true);
   };
 
-  const handleMore = (postId: string) => {
-    toast({
-      title: "More Options",
-      description: "More options coming soon!",
-    });
+  const handlePostUpdate = (postId: string, updates: Partial<Post>) => {
+    setPosts((prevPosts) =>
+      prevPosts.map((post) =>
+        post._id === postId ? { ...post, ...updates } : post
+      )
+    );
   };
 
   const formatTimeAgo = (dateString: string) => {
@@ -920,19 +1155,18 @@ export default function OverviewScreen() {
                               ]}
                               activeOpacity={0.8}
                             >
-                              {post.isFollowingCreator ? (
-                                <>
-                                  <Text style={themedStyles.followButtonText}>
-                                    Following
-                                  </Text>
-                                </>
-                              ) : (
-                                <>
-                                  <Text style={themedStyles.followButtonText}>
-                                    Follow
-                                  </Text>
-                                </>
-                              )}
+                              <Text
+                                style={[
+                                  themedStyles.followButtonText,
+                                  post.isFollowingCreator && {
+                                    color: colors.primary,
+                                  },
+                                ]}
+                              >
+                                {post.isFollowingCreator
+                                  ? "Following"
+                                  : "Follow"}
+                              </Text>
                             </TouchableOpacity>
                           )}
                       </View>
@@ -940,15 +1174,23 @@ export default function OverviewScreen() {
 
                     {/* Post Content */}
                     {post.content && (
-                      <Text style={themedStyles.postText}>{post.content}</Text>
+                      <Text
+                        style={themedStyles.postText}
+                        numberOfLines={3}
+                        ellipsizeMode="tail"
+                      >
+                        {post.content}
+                      </Text>
                     )}
 
-                    {/* Post Image */}
-                    <Image
-                      source={{ uri: post.url }}
-                      style={themedStyles.postImage}
-                      resizeMode="cover"
-                    />
+                    {/* Post Image - Tappable for full view */}
+                    <TouchableOpacity onPress={() => handleOpenFullPost(post)}>
+                      <Image
+                        source={{ uri: post.url }}
+                        style={themedStyles.postImage}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
 
                     {/* Engagement Stats */}
                     <View style={themedStyles.engagementStats}>
@@ -985,7 +1227,7 @@ export default function OverviewScreen() {
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        onPress={() => handleComment(post)}
+                        onPress={() => handleOpenFullPost(post)}
                         style={themedStyles.actionButton}
                         activeOpacity={0.7}
                       >
@@ -996,7 +1238,6 @@ export default function OverviewScreen() {
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        onPress={() => handleShare(post._id)}
                         style={themedStyles.actionButton}
                         activeOpacity={0.7}
                       >
@@ -1015,6 +1256,7 @@ export default function OverviewScreen() {
               {/* Loading More Indicator */}
               {loadingMore && (
                 <View style={themedStyles.loadingMore}>
+                  <ActivityIndicator size="large" color={colors.primary} />
                   <Text style={themedStyles.loadingMoreText}>
                     Loading more posts...
                   </Text>
@@ -1049,15 +1291,16 @@ export default function OverviewScreen() {
         </View>
       </ScrollView>
 
-      {/* Comments Modal */}
-      <CommentsModal
-        visible={commentsModalVisible}
+      {/* Full Post Modal */}
+      <FullPostModal
+        visible={fullPostModalVisible}
         onClose={() => {
-          setCommentsModalVisible(false);
+          setFullPostModalVisible(false);
           setSelectedPost(null);
         }}
         post={selectedPost}
-        onAddComment={handleAddComment}
+        onPostUpdate={handlePostUpdate}
+        currentUserId={currentUserId}
         colors={colors}
       />
     </SafeAreaView>
@@ -1087,22 +1330,6 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       padding: 20,
       paddingBottom: 10,
     },
-    followButtonDefault: {
-      backgroundColor: colors.primary,
-    },
-
-    followingButton: {
-      backgroundColor: colors.cardBackground,
-      borderWidth: 1,
-      borderColor: colors.primary,
-    },
-
-    followButtonText: {
-      fontSize: 14,
-      fontWeight: "600",
-      color: colors.white,
-    },
-
     welcomeText: {
       fontSize: 16,
       color: colors.textSecondary,
@@ -1171,14 +1398,6 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       color: colors.textPrimary,
       fontSize: 20,
       fontWeight: "bold",
-    },
-    avatar: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      marginRight: 12,
-      borderWidth: 2,
-      borderColor: colors.primary + "30",
     },
     authorText: {
       flex: 1,
@@ -1262,6 +1481,31 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       marginLeft: 6,
       fontWeight: "500",
     },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginLeft: 8,
+    },
+    followButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor: "transparent",
+      marginRight: 2,
+    },
+    followButtonDefault: {
+      backgroundColor: colors.primary,
+    },
+    followingButton: {
+      backgroundColor: colors.cardBackground,
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+    followButtonText: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.white,
+    },
     emptyCard: {
       marginTop: 50,
       backgroundColor: colors.cardBackground,
@@ -1307,30 +1551,13 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
     loadingMore: {
       paddingVertical: 20,
       alignItems: "center",
+      gap: 12,
     },
     loadingMoreText: {
       fontSize: 14,
       color: colors.textSecondary,
       fontWeight: "500",
     },
-    headerActions: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginLeft: 8,
-    },
-
-    followButton: {
-      padding: 10,
-
-      borderRadius: 20,
-      backgroundColor: "transparent",
-      marginRight: 2,
-    },
-
-    followButtonActive: {
-      backgroundColor: colors.primary + "15",
-    },
-
     endOfPosts: {
       paddingVertical: 20,
       alignItems: "center",
@@ -1339,5 +1566,408 @@ const getThemedStyles = (colors: ThemeContextType["colors"]) =>
       fontSize: 16,
       color: colors.textSecondary,
       fontWeight: "500",
+    },
+  });
+
+const getModalStyles = (colors: ThemeContextType["colors"]) =>
+  StyleSheet.create({
+    modalContainer: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    backButton: {
+      padding: 8,
+      borderRadius: 20,
+    },
+    headerTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    moreButton: {
+      padding: 8,
+      borderRadius: 20,
+    },
+    content: {
+      flex: 1,
+    },
+    postHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 12,
+    },
+    authorInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+    },
+    authorAvatar: {
+      width: 44,
+      height: 44,
+      borderColor: colors.primary,
+      borderWidth: 2,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 22,
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 12,
+    },
+    authorInitial: {
+      color: colors.textPrimary,
+      fontSize: 18,
+      fontWeight: "bold",
+    },
+    authorText: {
+      flex: 1,
+    },
+    authorNameRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    authorName: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    timestampContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 2,
+    },
+    username: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: "500",
+    },
+    timestamp: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginLeft: 4,
+    },
+    followButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor: colors.primary,
+    },
+    followButtonDefault: {
+      backgroundColor: colors.primary,
+    },
+    followingButton: {
+      backgroundColor: colors.cardBackground,
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+    followButtonText: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.white,
+    },
+    postText: {
+      fontSize: 16,
+      color: colors.textPrimary,
+      lineHeight: 24,
+      paddingHorizontal: 16,
+      marginBottom: 16,
+    },
+    postImage: {
+      width: screenWidth,
+      height: screenWidth,
+      marginBottom: 16,
+    },
+    engagementStats: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      marginBottom: 12,
+    },
+    statText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: "500",
+    },
+    actionButtons: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingBottom: 16,
+    },
+    actionButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      marginRight: 16,
+      borderRadius: 20,
+    },
+    actionText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginLeft: 6,
+      fontWeight: "500",
+    },
+    viewsContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginLeft: "auto",
+      paddingHorizontal: 8,
+    },
+    viewsText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginLeft: 4,
+      fontWeight: "500",
+    },
+    commentsSection: {
+      paddingHorizontal: 16,
+      paddingBottom: 100,
+    },
+    commentsTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.textPrimary,
+      marginBottom: 16,
+    },
+    loadingContainer: {
+      padding: 40,
+      alignItems: "center",
+    },
+    commentContainer: {
+      marginBottom: 16,
+    },
+    commentItem: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+    },
+    commentAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.primary + "20",
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 12,
+      marginTop: 2,
+    },
+    commentAvatarText: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    commentContent: {
+      flex: 1,
+    },
+    commentHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 6,
+      gap: 8,
+    },
+    commentAuthor: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    commentTime: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    commentText: {
+      fontSize: 15,
+      color: colors.textPrimary,
+      lineHeight: 22,
+      marginBottom: 8,
+    },
+    commentActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 16,
+    },
+    commentAction: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 4,
+      paddingHorizontal: 8,
+      borderRadius: 12,
+      gap: 4,
+    },
+    commentActionText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: "500",
+    },
+    replyInput: {
+      marginTop: 12,
+      padding: 12,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    replyTextInput: {
+      fontSize: 14,
+      color: colors.textPrimary,
+      minHeight: 40,
+      textAlignVertical: "top",
+      marginBottom: 8,
+    },
+    replyActions: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: 12,
+    },
+    replyCancel: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+    },
+    replyCancelText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: "500",
+    },
+    replySubmit: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+      backgroundColor: colors.primary,
+    },
+    replySubmitDisabled: {
+      backgroundColor: colors.textSecondary + "40",
+    },
+    replySubmitText: {
+      fontSize: 14,
+      color: colors.white,
+      fontWeight: "600",
+    },
+    repliesContainer: {
+      marginTop: 12,
+      marginLeft: 16,
+      borderLeftWidth: 2,
+      borderLeftColor: colors.border,
+      paddingLeft: 12,
+    },
+    replyItem: {
+      flexDirection: "row",
+      marginBottom: 12,
+    },
+    replyAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.primary + "20",
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 8,
+    },
+    replyAvatarText: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    replyContent: {
+      flex: 1,
+    },
+    replyHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 4,
+      gap: 6,
+    },
+    replyAuthor: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    replyTime: {
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
+    replyText: {
+      fontSize: 14,
+      color: colors.textPrimary,
+      lineHeight: 20,
+    },
+    commentSeparator: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 8,
+    },
+    emptyComments: {
+      alignItems: "center",
+      paddingVertical: 60,
+      paddingHorizontal: 40,
+    },
+    emptyCommentsText: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.textPrimary,
+      marginTop: 16,
+      marginBottom: 8,
+    },
+    emptyCommentsSubtext: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: "center",
+      lineHeight: 20,
+    },
+    commentInputContainer: {
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.cardBackground,
+      paddingBottom: Platform.OS === "ios" ? 0 : 16,
+    },
+    commentInputWrapper: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      gap: 12,
+    },
+    commentInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      backgroundColor: colors.background,
+      color: colors.textPrimary,
+      fontSize: 16,
+      maxHeight: 100,
+      minHeight: 44,
+    },
+    sendButton: {
+      backgroundColor: colors.primary,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    sendButtonDisabled: {
+      backgroundColor: colors.textSecondary + "40",
+    },
+    characterCount: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      textAlign: "right",
+      paddingHorizontal: 16,
+      paddingBottom: 12,
+      paddingTop: 4,
     },
   });

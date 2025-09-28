@@ -926,7 +926,7 @@ export async function getPostDetails(postId: string) {
   }
 }
 
-// 🔥 FIXED: Frontend API call - lib/api.ts
+// Enhanced like post function with better error handling
 export async function likePost(postId: string) {
   try {
     const token = await getAuthToken();
@@ -948,31 +948,590 @@ export async function likePost(postId: string) {
       },
     });
 
-    // 🔥 FIXED: Better response handling
+    console.log("📡 Like response status:", response.status);
+
     const result = await handleApiResponse(response);
+    console.log("✅ Like API result:", result);
 
-    console.log("✅ Like API response:", {
-      success: result.success,
-      action: result.data?.action,
-      likeCount: result.data?.likeCount,
-      isLiked: result.data?.isLiked,
-    });
-
-    // 🔥 FIXED: Ensure consistent response format
+    // Ensure we return the expected data structure
     return {
       success: true,
-      message: result.message,
       data: {
-        action: result.data.action,
-        likeCount: parseInt(result.data.likeCount) || 0, // Ensure it's a number
-        isLiked: result.data.isLiked === true,
+        isLiked:
+          result.data?.action === "liked" || result.data?.isLiked || false,
+        likeCount: result.data?.likeCount || 0,
+        action:
+          result.data?.action || (result.data?.isLiked ? "liked" : "unliked"),
       },
+      message: result.message || "Like status updated successfully",
     };
   } catch (error: any) {
     console.error("❌ Like post error:", error);
     return {
       success: false,
-      message: error.message || "Failed to toggle like. Please try again.",
+      message:
+        error.message || "Failed to update like status. Please try again.",
+      data: {
+        isLiked: false,
+        likeCount: 0,
+        action: "error",
+      },
+    };
+  }
+}
+
+// Enhanced comment on post with reply support
+export async function commentOnPostWithReply(
+  postId: string,
+  content: string,
+  parentCommentId?: string
+) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    if (!content || content.trim().length === 0) {
+      return {
+        success: false,
+        message: "Comment content is required",
+      };
+    }
+
+    if (content.trim().length > 500) {
+      return {
+        success: false,
+        message: "Comment is too long. Maximum 500 characters allowed.",
+      };
+    }
+
+    console.log(
+      `📡 Adding ${parentCommentId ? "reply" : "comment"} to post: ${postId}`
+    );
+
+    const body: any = { content: content.trim() };
+    if (parentCommentId) {
+      body.parentCommentId = parentCommentId;
+    }
+
+    const response = await fetch(`${IMAGES_BASE_URL}/${postId}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const result = await handleApiResponse(response);
+    console.log("✅ Comment API result:", result);
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("❌ Comment post error:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to add comment. Please try again.",
+    };
+  }
+}
+
+// Enhanced get post with comments - includes nested replies
+export async function getPostWithCommentsEnhanced(postId: string) {
+  try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    console.log(`📡 Loading post with comments: ${postId}`);
+
+    const response = await fetch(`${IMAGES_BASE_URL}/${postId}`, {
+      method: "GET",
+      headers,
+    });
+
+    const result = await handleApiResponse(response);
+
+    if (result.success && result.data?.image) {
+      const image = result.data.image;
+
+      // Ensure comments are properly formatted with nested structure
+      image.comments = (image.comments || []).map((comment: any) => ({
+        ...comment,
+        isLikedByUser: comment.isLikedByUser || false,
+        likeCount: comment.likeCount || 0,
+        replies: comment.replies || [],
+      }));
+
+      image.isFollowingCreator = image.isFollowingCreator || false;
+
+      console.log("✅ Post loaded with comments:", image.comments.length);
+    }
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("❌ Error getting post with comments:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load post details.",
+      data: null,
+    };
+  }
+}
+
+export async function getUserSocialStats(userId?: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+        data: {
+          followersCount: 0,
+          followingCount: 0,
+          postsCount: 0,
+          likesReceived: 0,
+        },
+      };
+    }
+
+    const endpoint = userId
+      ? `${SOCIAL_BASE_URL}/users/${userId}/profile`
+      : `${SOCIAL_BASE_URL}/me/stats`;
+
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const result = await handleApiResponse(response);
+
+    if (result.success) {
+      const stats = result.data?.user?.socialStats || result.data?.stats || {};
+
+      return {
+        success: true,
+        data: {
+          followersCount: stats.followers || 0,
+          followingCount: stats.following || 0,
+          postsCount: stats.images || 0,
+          likesReceived: stats.totalLikes || 0,
+          commentsReceived: stats.totalComments || 0,
+          views: stats.totalViews || 0,
+          engagementRate: stats.engagementRate || "0",
+        },
+        ...result,
+      };
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error("❌ Error getting social stats:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load social statistics.",
+      data: {
+        followersCount: 0,
+        followingCount: 0,
+        postsCount: 0,
+        likesReceived: 0,
+      },
+    };
+  }
+}
+
+// Batch like multiple posts (useful for admin operations)
+export async function batchLikePosts(postIds: string[]) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const results = await Promise.allSettled(
+      postIds.map((postId) => likePost(postId))
+    );
+
+    const successful = results.filter(
+      (result) => result.status === "fulfilled" && result.value.success
+    ).length;
+
+    return {
+      success: successful > 0,
+      message: `Liked ${successful} out of ${postIds.length} posts`,
+      data: {
+        total: postIds.length,
+        successful,
+        failed: postIds.length - successful,
+      },
+    };
+  } catch (error: any) {
+    console.error("❌ Batch like error:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to batch like posts.",
+      data: {
+        total: 0,
+        successful: 0,
+        failed: 0,
+      },
+    };
+  }
+}
+
+// Enhanced get followers with better data structure
+export async function getFollowersEnhanced(
+  userId: string,
+  page = 1,
+  limit = 20,
+  search?: string
+) {
+  try {
+    const token = await getAuthToken();
+    let queryParams = `page=${page}&limit=${limit}`;
+
+    if (search) {
+      queryParams += `&search=${encodeURIComponent(search)}`;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/users/${userId}/followers?${queryParams}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    if (result.success && result.data?.followers) {
+      // Enhance follower data with additional info
+      result.data.followers = result.data.followers.map((follower: any) => ({
+        ...follower,
+        user: follower.follower || follower.user,
+        followedAt: follower.followedAt || follower.createdAt,
+        isMutualFollow: follower.isMutualFollow || false,
+      }));
+    }
+
+    console.log(
+      "✅ Enhanced followers loaded:",
+      result.data?.followers?.length || 0
+    );
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("❌ Error getting enhanced followers:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load followers.",
+      data: { followers: [], pagination: {} },
+    };
+  }
+}
+
+// Enhanced get following with better data structure
+export async function getFollowingEnhanced(
+  userId: string,
+  page = 1,
+  limit = 20,
+  search?: string
+) {
+  try {
+    const token = await getAuthToken();
+    let queryParams = `page=${page}&limit=${limit}`;
+
+    if (search) {
+      queryParams += `&search=${encodeURIComponent(search)}`;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${SOCIAL_BASE_URL}/users/${userId}/following?${queryParams}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    if (result.success && result.data?.following) {
+      // Enhance following data with additional info
+      result.data.following = result.data.following.map((following: any) => ({
+        ...following,
+        user: following.following || following.user,
+        followedAt: following.followedAt || following.createdAt,
+        isMutualFollow: following.isMutualFollow || false,
+      }));
+    }
+
+    console.log(
+      "✅ Enhanced following loaded:",
+      result.data?.following?.length || 0
+    );
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("❌ Error getting enhanced following:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load following.",
+      data: { following: [], pagination: {} },
+    };
+  }
+}
+
+// Delete comment with better error handling
+export async function deleteCommentEnhanced(postId: string, commentId: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    console.log(`📡 Deleting comment ${commentId} from post ${postId}`);
+
+    const response = await fetch(
+      `${IMAGES_BASE_URL}/${postId}/comments/${commentId}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+    console.log("✅ Comment deleted successfully");
+
+    return {
+      success: true,
+      message: "Comment deleted successfully",
+      data: {
+        commentId,
+        postId,
+        commentCount: result.data?.commentCount || 0,
+      },
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("❌ Delete comment error:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to delete comment. Please try again.",
+    };
+  }
+}
+
+// Report content (post or comment)
+export async function reportContent(
+  contentId: string,
+  contentType: "post" | "comment",
+  reason: string,
+  description?: string
+) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    const endpoint =
+      contentType === "post"
+        ? `${IMAGES_BASE_URL}/${contentId}/report`
+        : `${IMAGES_BASE_URL}/comments/${contentId}/report`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        reason,
+        description: description?.trim() || "",
+      }),
+    });
+
+    const result = await handleApiResponse(response);
+
+    return {
+      success: true,
+      message: `${
+        contentType === "post" ? "Post" : "Comment"
+      } reported successfully`,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error(`❌ Report ${contentType} error:`, error);
+    return {
+      success: false,
+      message:
+        error.message || `Failed to report ${contentType}. Please try again.`,
+    };
+  }
+}
+
+// Get trending posts with enhanced data
+export async function getTrendingPosts(
+  timeframe: "day" | "week" | "month" = "week",
+  limit = 20
+) {
+  try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${IMAGES_BASE_URL}/trending/${timeframe}?limit=${limit}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    const result = await handleApiResponse(response);
+
+    if (result.success && result.data?.images) {
+      // Transform trending posts to match our Post interface
+      result.data.images = result.data.images.map((image: any) => ({
+        _id: image._id,
+        createdBy: image.createdBy,
+        content: image.content || "",
+        url: image.url,
+        thumbnailUrl: image.thumbnailUrl || image.url,
+        createdAt: image.createdAt,
+        likeCount: image.likeCount || 0,
+        commentCount: image.commentCount || 0,
+        views: image.views || 0,
+        isLikedByUser: image.isLikedByUser || false,
+        category: image.category || "general",
+        tags: image.tags || [],
+        comments: image.comments || [],
+        isFollowingCreator: image.isFollowingCreator || false,
+      }));
+    }
+
+    return {
+      success: true,
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("❌ Error getting trending posts:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to load trending posts.",
+      data: { images: [] },
+    };
+  }
+}
+
+// New function to like/unlike comments
+export async function likeComment(commentId: string) {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "No authentication token found. Please login again.",
+      };
+    }
+
+    console.log(`📡 Toggling like for comment: ${commentId}`);
+
+    // This endpoint might need to be created on your backend
+    const response = await fetch(
+      `${IMAGES_BASE_URL}/comments/${commentId}/like`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const result = await handleApiResponse(response);
+    console.log("✅ Comment like API result:", result);
+
+    return {
+      success: true,
+      data: {
+        isLiked: result.data?.isLiked || false,
+        likeCount: result.data?.likeCount || 0,
+      },
+      ...result,
+    };
+  } catch (error: any) {
+    console.error("❌ Like comment error:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to like comment. Please try again.",
+      data: {
+        isLiked: false,
+        likeCount: 0,
+      },
     };
   }
 }
