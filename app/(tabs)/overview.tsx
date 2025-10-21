@@ -1081,9 +1081,6 @@ export default function OverviewScreen() {
           <Text style={themedStyles.welcomeText}>Welcome back,</Text>
           <Text style={themedStyles.nameText}>{userData?.name}!</Text>
         </View>
-        <TouchableOpacity style={themedStyles.createPostButton}>
-          <Plus color={colors.white} size={24} />
-        </TouchableOpacity>
       </View>
 
       <ScrollView

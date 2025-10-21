@@ -1019,14 +1019,17 @@ export async function commentOnPostWithReply(
       body.parentCommentId = parentCommentId;
     }
 
-    const response = await fetch(`${IMAGES_BASE_URL}/${postId}/comments`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
+    const response = await fetch(
+      `${IMAGES_BASE_URL}/${postId}/comments/${parentCommentId}/${content}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      }
+    );
 
     const result = await handleApiResponse(response);
     console.log("✅ Comment API result:", result);
